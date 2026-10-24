@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Delivery Tracking Listener</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: system-ui;
+            color: #e5e7eb;
+            background: #0f172a;
+        }
+
+        .card {
+            background: #0b1220;
+            padding: 18px;
+            border-radius: 14px;
+            max-width: 920px;
+            margin: auto;
+        }
+
+        .status {
+            padding: 6px 12px;
+            border-radius: 999px;
+            margin-bottom: 12px;
+            display: inline-block;
+        }
+
+        .status.ok {
+            background: #052e1a;
+            color: #86efac;
+        }
+
+        .status.warn {
+            background: #2a1005;
+            color: #fde68a;
+        }
+
+        .status.err {
+            background: #0b0b0b;
+            color: #fecaca;
+        }
+
+        .delivery-box,
+        .env-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        input,
+        select {
+            flex: 1;
+            padding: 10px;
+            border-radius: 10px;
+            border: none;
+            outline: none;
+        }
+
+        button {
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            background: #2563eb;
+            color: white;
+            font-weight: 600;
+        }
+
+        .logs {
+            background: #02061780;
+            padding: 12px;
+            border-radius: 10px;
+            height: 400px;
+            overflow: auto;
+            margin-top: 12px;
+            font-size: 12px;
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <div class="card">
+
+        <h2>Delivery Tracking Listener</h2>
+
+        <div class="env-box">
+
+            <select id="envSelect">
+                <option value="local">Local</option>
+                <option value="prod">Production</option>
+                <option value="custom">Custom</option>
+            </select>
+
+            <input id="socketUrl" placeholder="Socket URL">
+
+            <input id="tokenInput" placeholder="Auth Token (optional)">
+
+            <button id="connectBtn">Connect</button>
+
+        </div>
+
+        <div id="status" class="status warn">
+            Not connected
+        </div>
+
+        <div class="delivery-box">
+
+            <input id="deliveryInput" placeholder="Enter Delivery ID">
+
+            <button id="subscribeBtn">
+                Subscribe
+            </button>
+
+            <button id="unsubscribeBtn" style="background:#dc2626;">
+                Unsubscribe
+            </button>
+
+            <button id="clearLogsBtn" style="background:#6b7280;">
+                Clear Logs
+            </button>
+
+        </div>
+
+        <h3>Incoming Delivery Events</h3>
+
+        <div id="logs" class="logs"></div>
+
+    </div>
+
+    <script>
+
+        let socket = null;
+        let currentDeliveryId = null;
+
+        const statusEl = document.getElementById("status");
+        const deliveryInput = document.getElementById("deliveryInput");
+        const subscribeBtn = document.getElementById("subscribeBtn");
+        const unsubscribeBtn = document.getElementById("unsubscribeBtn");
+        const clearLogsBtn = document.getElementById("clearLogsBtn");
+        const logsEl = document.getElementById("logs");
+        const envSelect = document.getElementById("envSelect");
+        const socketUrlEl = document.getElementById("socketUrl");
+        const tokenInput = document.getElementById("tokenInput");
+        const connectBtn = document.getElementById("connectBtn");
+
+        const ENV_URLS = {
+            local: "http://localhost:4022",
+            prod: "wss://superapp-event-service.testsdlc.in"
+        };
+
+        function setStatus(text, type = "ok") {
+            statusEl.textContent = text;
+            statusEl.className = "status";
+            statusEl.classList.add(type);
+        }
+
+        function logEvent(event, data) {
+
+            const div = document.createElement("div");
+
+            div.innerHTML =
+                "<b>" + event + "</b><br>" + JSON.stringify(data, null, 2);
+
+            logsEl.appendChild(div);
+
+            logsEl.appendChild(document.createElement("hr"));
+
+            logsEl.scrollTop = logsEl.scrollHeight;
+
+        }
+
+        function updateSocketUrl() {
+
+            const env = envSelect.value;
+
+            if (env === "custom") {
+                socketUrlEl.value = "";
+                socketUrlEl.removeAttribute("readonly");
+            }
+            else {
+                socketUrlEl.value = ENV_URLS[env];
+                socketUrlEl.setAttribute("readonly", true);
+            }
+
+        }
+
+        envSelect.addEventListener("change", updateSocketUrl);
+
+        updateSocketUrl();
+
+        connectBtn.addEventListener("click", () => {
+
+            const url = socketUrlEl.value.trim();
+
+            const token = tokenInput.value.trim();
+
+            if (!url) {
+                setStatus("Enter Socket URL", "warn");
+                return;
+            }
+
+            if (socket) socket.disconnect();
+
+            socket = io(url, {
+                transports: ["websocket"],
+                auth: token ? { token } : {}
+            });
+
+            socket.on("connect", () => {
+                setStatus("Connected", "ok");
+            });
+
+            socket.on("disconnect", () => {
+                setStatus("Disconnected", "err");
+            });
+
+            socket.on("connect_error", (err) => {
+                setStatus(err.message, "err");
+            });
+
+            socket.on("subscribedDeliveryTracking", (data) => {
+                logEvent("subscribedDeliveryTracking", data);
+            });
+
+            socket.on("unsubscribedDeliveryTracking", (data) => {
+                logEvent("unsubscribedDeliveryTracking", data);
+                setStatus(data.message, "ok");
+                currentDeliveryId = null;
+            });
+
+            socket.on("deliveryTrackingUpdate", (data) => {
+                logEvent("deliveryTrackingUpdate", data);
+            });
+
+            socket.on("deliveryStream", (data) => {
+                logEvent("deliveryStream", data);
+            });
+
+        });
+
+        subscribeBtn.addEventListener("click", () => {
+
+            const deliveryId = deliveryInput.value.trim();
+
+            if (!deliveryId) {
+                setStatus("Enter Delivery ID", "warn");
+                return;
+            }
+
+            currentDeliveryId = deliveryId;
+
+            if (socket && socket.connected) {
+
+                socket.emit("subscribeDeliveryTracking", {
+                    deliveryId
+                });
+
+                setStatus("Subscribed to " + deliveryId, "ok");
+
+            }
+            else {
+                setStatus("Connect socket first", "warn");
+            }
+
+        });
+
+        unsubscribeBtn.addEventListener("click", () => {
+
+            if (!socket || !socket.connected) {
+                setStatus("Connect socket first", "warn");
+                return;
+            }
+
+            if (!currentDeliveryId) {
+                setStatus("No delivery subscribed", "warn");
+                return;
+            }
+
+            socket.emit("unsubscribeDeliveryTracking", {
+                deliveryId: currentDeliveryId
+            });
+
+        });
+
+        clearLogsBtn.addEventListener("click", () => {
+            logsEl.innerHTML = "";
+        });
+
+    </script>
+
+</body>
+
+</html>

@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: 'coturn'
+    static_configs:
+      - targets: ['172.17.0.1:9641']
+        labels:
+          service: 'coturn'
+          environment: 'production'
+  - job_name: 'mediasoup'
+    metrics_path: /monitoring/metrics
+    static_configs:
+      - targets: ['172.17.0.1:4021']
+        labels:
+          service: 'mediasoup'
+          environment: 'production'

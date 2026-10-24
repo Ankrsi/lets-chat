@@ -1,0 +1,757 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Audio Call Demo</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+
+<body>
+  <h1>🎤 Audio Call Demo</h1>
+
+  <label>Your ID: <input id="myId" placeholder="e.g. 919836834245" /></label><br><br>
+  <label>Call To: <input id="targetId" placeholder="e.g. 919831624339" /></label><br><br>
+
+  <button id="registerBtn">Register</button>
+  <button id="callBtn">Call</button>
+  <button id="pickBtn" disabled>Pick Call</button>
+  <button id="endBtn">End Call</button>
+
+  <br />
+  <br />
+  <input id="newUserId" placeholder="New user ID e.g. 919831624339" />
+  <button id="addUserBtn">Add User</button>
+
+  <pre id="logs"></pre>
+
+  <audio id="remoteAudio" autoplay></audio>
+
+  <script>
+    console.log("token:", localStorage.getItem("token"));
+    let pendingCandidates = [];
+    // const socket = io("http://localhost:4022", {
+    const socket = io("http://192.168.1.36:4022", {
+      // const socket = io("http://89.116.121.48:4022", {
+      transports: ["websocket"],
+      auth: { token: localStorage.getItem("token") },
+    });
+    const logEl = document.getElementById("logs");
+    const myIdEl = document.getElementById("myId");
+    const targetIdEl = document.getElementById("targetId");
+    const remoteAudio = document.getElementById("remoteAudio");
+
+    let localStream;
+    let peerConnection;
+    let currentCallId;
+    let pendingOffer = null;
+    let pendingFrom = null;
+
+    function log(msg) {
+      console.log(msg);
+      logEl.textContent += msg + "\n";
+    }
+
+    // Register user
+    document.getElementById("registerBtn").onclick = async () => {
+      const myId = myIdEl.value.trim();
+      if (!myId) return alert("Enter your ID first");
+      socket.emit("registerUser", { senderId: myId });
+      log("Registered as " + myId);
+
+      // Get microphone permission
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      log("Microphone ready");
+    };
+
+    // Create peer connection
+    function createPeerConnection(to) {
+      peerConnection = new RTCPeerConnection({
+        // iceServers: [
+        //   { urls: "stun:stun.l.google.com:19302" },
+        //   { urls: "turn:111.223.27.24:3478", username: "eventserverturn", credential: "ankrsi1a9k9s7.sdlc" }
+        // ]
+        iceServers: [
+          {
+            urls: [
+              "stun:stun.cloudflare.com:3478",
+              "stun:stun.cloudflare.com:53"
+            ]
+          },
+          {
+            urls: [
+              "turn:turn.cloudflare.com:3478?transport=udp",
+              "turn:turn.cloudflare.com:3478?transport=tcp",
+              "turns:turn.cloudflare.com:5349?transport=tcp",
+              "turn:turn.cloudflare.com:53?transport=udp",
+              "turn:turn.cloudflare.com:80?transport=tcp",
+              "turns:turn.cloudflare.com:443?transport=tcp"
+            ],
+            username: "g088b904474f6b35adcd003a245ced43af27607374d51381bee3f6e0e51c0857",
+            credential: "0245b99a92bc8446c6c210318dac3e8efe1bcee524fce0c1fc9762314858e895"
+          }
+        ]
+      });
+
+      // Add microphone track
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      // Play remote audio
+      peerConnection.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+      };
+
+      // Send ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("call:ice-candidate", {
+            callId: currentCallId,
+            from: myIdEl.value,
+            to,
+            candidate: event.candidate,
+          });
+        }
+      };
+
+      return peerConnection;
+    }
+
+    // Start call
+    document.getElementById("callBtn").onclick = async () => {
+      const from = myIdEl.value.trim();
+      const to = targetIdEl.value.trim();
+      if (!from || !to) return alert("Enter both IDs");
+
+      createPeerConnection(to);
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      socket.emit("call:offer", { from, to, offer, conversationId: "68c9271100daf7ba1ae4eb4a" });
+      log("Calling " + to);
+    };
+
+    // Pick Call button
+    document.getElementById("pickBtn").onclick = async () => {
+      if (!pendingOffer || !pendingFrom) return;
+
+      log("Picking call from " + pendingFrom);
+      currentCallId = pendingOffer.callId;
+
+      createPeerConnection(pendingFrom);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingOffer.offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+
+      socket.emit("call:stopTimer", {
+        callId: currentCallId,
+      });
+
+      if (pendingOffer.offerType === "add-user") {
+        socket.emit("call:add-answer", { callId: currentCallId, from: myIdEl.value, answer });
+      }
+      else {
+        socket.emit("call:answer", {
+          callId: currentCallId,
+          from: myIdEl.value,
+          to: pendingFrom,
+          answer,
+        });
+      }
+
+      socket.emit("call:connect", {
+        from: myIdEl.value,
+        to: pendingFrom,
+        callId: currentCallId,
+      });
+
+      log("Call picked with " + pendingFrom);
+      document.getElementById("pickBtn").disabled = true;
+      pendingOffer = null;
+      pendingFrom = null;
+    };
+
+    // End call
+    document.getElementById("endBtn").onclick = () => {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      socket.emit("call:end", { callId: currentCallId, from: myIdEl.value, to: targetIdEl.value, conversationId: "68c9271100daf7ba1ae4eb4a" });
+      log("Call ended");
+    };
+
+    // add new user
+    document.getElementById("addUserBtn").onclick = async () => {
+      const from = myIdEl.value.trim();
+      const newUser = document.getElementById("newUserId").value.trim();
+
+      if (!from || !newUser || !currentCallId) {
+        return alert("You must be in a call and provide new user ID");
+      }
+
+      createPeerConnection(newUser);
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      socket.emit("call:add-user", { callId: currentCallId, from, to: newUser, offer, conversationId: "68c9271100daf7ba1ae4eb4a" })
+    }
+
+    // Incoming call
+    socket.on("call:incoming", async ({ callId, from, offer, offerType }) => {
+      log("Incoming call from " + from);
+      createPeerConnection(from);
+      pendingOffer = { callId, offer, offerType };
+      pendingFrom = from;
+
+      document.getElementById("pickBtn").disabled = false; // enable pick button
+    });
+
+    // Handle answer
+    socket.on("call:answer", async ({ from, answer }) => {
+      log("Got answer from " + from);
+
+      if (!peerConnection) {
+        console.warn("PeerConnection missing, ignoring answer");
+        return;
+      }
+
+      if (peerConnection.signalingState !== "have-local-offer") {
+        console.warn("Ignoring answer, state:", peerConnection.signalingState);
+        return;
+      }
+
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+
+      for (const c of pendingCandidates) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+        } catch (e) {
+          console.error("Error adding buffered ICE candidate", e);
+        }
+      }
+      pendingCandidates = [];
+    });
+
+    // add ans for new user
+    socket.on("call:add-answer", async ({ from, answer }) => {
+      log("New user " + from + " joined call");
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    // Handle ICE candidates
+    // socket.on("call:ice-candidate", async ({ candidate }) => {
+    //   if (!peerConnection) {
+    //     console.warn("ICE candidate received before peerConnection ready → buffering");
+    //     return;
+    //   }
+    //   try {
+    //     await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    //   } catch (e) {
+    //     console.error("Error adding ICE candidate", e);
+    //   }
+    // });
+    socket.on("call:ice-candidate", async ({ candidate }) => {
+      if (!candidate) return;
+
+      // If peerConnection not yet created, store the candidate temporarily
+      if (!peerConnection || !peerConnection.remoteDescription) {
+        console.warn("Buffering ICE candidate until remoteDescription is set");
+        pendingCandidates.push(candidate);
+        return;
+      }
+
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log("ICE candidate added");
+      } catch (e) {
+        console.error("Error adding ICE candidate", e);
+      }
+    });
+
+    // Call ended
+    socket.on("call:ended", ({ from }) => {
+      log("Call ended by " + from);
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+    });
+
+  </script>
+</body>
+
+</html> -->
+
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Group-capable Audio Call (Fixed)</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: Arial;
+      padding: 12px;
+    }
+
+    input {
+      width: 260px;
+    }
+
+    pre {
+      background: #111;
+      color: #0f0;
+      padding: 8px;
+      height: 260px;
+      overflow: auto;
+    }
+
+    .remote {
+      margin: 8px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Audio Call</h2>
+
+  <div>
+    <label>Your ID: <input id="myId" placeholder="e.g. 9198..." /></label><br />
+    <label>Call To: <input id="targetId" placeholder="target user id" /></label><br />
+    <button id="registerBtn">Register & Enable Mic</button>
+    <button id="callBtn">Call</button>
+    <button id="pickBtn" disabled>Pick Incoming</button>
+    <button id="endBtn">End Call</button>
+  </div>
+
+  <hr />
+  <div>
+    <label>Add user to ongoing call: <input id="newUserId" placeholder="new user id" /></label>
+    <button id="addUserBtn">Add User</button>
+  </div>
+
+  <h4>Remote Streams</h4>
+  <div id="remoteList"></div>
+
+  <h4>Logs</h4>
+  <pre id="logs"></pre>
+
+  <script>
+    (async () => {
+      // CONFIG - update SOCKET_URL if needed
+      // const SOCKET_URL = "http://localhost:4022";
+      const SOCKET_URL = "http://192.168.1.33:4022";
+      // const SOCKET_URL = "http://89.116.121.48:4022";
+      const rtcConfig = {
+        // iceTransportPolicy: "relay",
+        iceServers: [
+          {
+            urls: [
+              "turn:89.116.121.48:3478?transport=udp",
+              "turn:89.116.121.48:3478?transport=tcp",
+              "turns:superapp-event-service.testsdlc.in:5349"
+            ],
+            username: "sdlccorp@superapp@eventserverturn",
+            credential: "superappturn1a9k9s7.@sdlccorp.@docker"
+          },
+        ]
+      };
+
+      const logs = document.getElementById("logs");
+      const myIdEl = document.getElementById("myId");
+      const targetIdEl = document.getElementById("targetId");
+      const registerBtn = document.getElementById("registerBtn");
+      const callBtn = document.getElementById("callBtn");
+      const pickBtn = document.getElementById("pickBtn");
+      const endBtn = document.getElementById("endBtn");
+      const addUserBtn = document.getElementById("addUserBtn");
+      const newUserIdEl = document.getElementById("newUserId");
+      const remoteList = document.getElementById("remoteList");
+
+      function log(msg) {
+        const t = new Date().toLocaleTimeString();
+        logs.textContent += `[${t}] ${msg}\n`;
+        logs.scrollTop = logs.scrollHeight;
+        console.log(msg);
+      }
+
+      const socket = io(SOCKET_URL, { transports: ["websocket"], auth: { token: localStorage.getItem("token") } });
+
+      // Local state
+      let localStream = null;
+      let currentCallId = null;
+      let pendingOffers = [];
+      let conversationId = null;
+
+      // peers: uid -> { pc: RTCPeerConnection, pendingCandidates: [], audioEl }
+      const peers = {};
+
+      async function ensureLocalStream() {
+        if (!localStream) {
+          localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          log("Got microphone stream");
+        }
+        return localStream;
+      }
+
+      function makeAudioElement(remoteId, remoteStream) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "remote";
+        wrapper.id = `wrapper-${remoteId}`;
+        const label = document.createElement("div");
+        label.textContent = `Remote: ${remoteId}`;
+        const audio = document.createElement("audio");
+        audio.autoplay = true;
+        audio.controls = true;
+        audio.id = `audio-${remoteId}`;
+        audio.srcObject = remoteStream;
+        wrapper.appendChild(label);
+        wrapper.appendChild(audio);
+        remoteList.appendChild(wrapper);
+        return audio;
+      }
+
+      function cleanupPeer(remoteId) {
+        const entry = peers[remoteId];
+        if (!entry) return;
+        try { entry.pc.close(); } catch { }
+        if (entry.audioEl) {
+          entry.audioEl.srcObject = null;
+          const w = document.getElementById(`wrapper-${remoteId}`);
+          if (w) w.remove();
+        }
+        delete peers[remoteId];
+        log(`Cleaned up peer ${remoteId}`);
+      }
+
+      function createPeer(remoteId) {
+        // create pc if not exists and return pc
+        if (peers[remoteId] && peers[remoteId].pc) return peers[remoteId].pc;
+
+        const pc = new RTCPeerConnection(rtcConfig);
+        peers[remoteId] = { pc, pendingCandidates: [], audioEl: null };
+
+        // attach local tracks (if present)
+        if (localStream) {
+          for (const t of localStream.getTracks()) {
+            try { pc.addTrack(t, localStream); } catch (e) { console.warn("addTrack failed", e); }
+          }
+        } else {
+          log("Warning: localStream not available when creating PC for " + remoteId);
+        }
+
+        pc.ontrack = (ev) => {
+          const remoteStream = ev.streams[0];
+          if (!remoteStream) return;
+          if (!peers[remoteId].audioEl) {
+            const audioObj = makeAudioElement(remoteId, remoteStream);
+            peers[remoteId].audioEl = audioObj;
+          }
+          // peers[remoteId].audioEl.srcObject = remoteStream;
+          if (remoteStream.active) {
+            log(`Call with ${remoteId} is connected`);
+          }
+        };
+
+        pc.onicecandidate = (e) => {
+          if (!e.candidate) return;
+          socket.emit("call:ice-candidate", {
+            callId: currentCallId,
+            from: myIdEl.value?.trim(),
+            to: remoteId,
+            candidate: e.candidate
+          });
+        };
+
+        pc.onconnectionstatechange = () => {
+          log(`PC[${remoteId}] state: ${pc.connectionState}`);
+          if (["failed", "disconnected", "closed"].includes(pc.connectionState)) cleanupPeer(remoteId);
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          log(`PC[${remoteId}] ICE: ${pc.iceConnectionState}`);
+        };
+
+        return pc;
+      }
+
+      async function applyBufferedCandidates(remoteId) {
+        const ent = peers[remoteId];
+        if (!ent || !ent.pc) return;
+        while (ent.pendingCandidates && ent.pendingCandidates.length) {
+          const c = ent.pendingCandidates.shift();
+          try {
+            await ent.pc.addIceCandidate(new RTCIceCandidate(c));
+            log(`Added buffered ICE for ${remoteId}`);
+          } catch (err) {
+            console.error("addIceCandidate error", err);
+          }
+        }
+      }
+
+      // UI actions
+      registerBtn.onclick = async () => {
+        const my = myIdEl.value?.trim();
+        if (!my) return alert("Enter your ID");
+        socket.emit("registerUser", { senderId: my });
+        log("Registered as " + my);
+        try { await ensureLocalStream(); } catch (e) { log("getUserMedia failed: " + e); }
+      };
+
+      callBtn.onclick = async () => {
+        currentCallId = null;
+        await ensureLocalStream();
+        const from = myIdEl.value?.trim();
+        const to = targetIdEl.value?.trim();
+        const targetTo = to.split(",");
+        if (targetTo.length < 2) {
+          if (!from || !to) return alert("Enter both IDs");
+          const pc = createPeer(to);
+          // ensure local tracks are added
+          localStream.getTracks().forEach(t => { try { pc.addTrack(t, localStream); } catch (e) { } });
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          // emit initial call offer to callee (server will route)
+          socket.emit("call:offer", { from, to, offer, conversationId: "692abd02ef34e7d115879684" });
+          log(`Sent call:offer -> ${to}`);
+        }
+        else {
+          socket.emit("call:group-start", { from, targets: targetTo, conversationId: "692abd02ef34e7d115879684" });
+        }
+      };
+
+      // pick incoming (initial offer or add-user offer)
+      pickBtn.onclick = async () => {
+        if (pendingOffers.length === 0) return;
+        await ensureLocalStream();
+
+        for (const incoming of pendingOffers) {
+          const { callId, offer, from, offerType } = incoming;
+          if (!currentCallId) currentCallId = callId;
+          if (offerType == "initial") {
+            const pc = createPeer(from);
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            // initial call answer back to caller
+            socket.emit("call:answer", { callId, from: myIdEl.value?.trim(), to: from, answer });
+            log(`Sent call:answer -> ${from}`);
+            // stop timer and notify connect
+            socket.emit("call:stopTimer", { callId });
+            socket.emit("call:connect", { callId, from: myIdEl.value?.trim(), to: from });
+            await applyBufferedCandidates(from);
+          }
+          if (offerType == "addUser") {
+            try {
+              socket.emit("call:add-user-accept", { callId, newUser: myIdEl.value?.trim(), from });
+            } catch (err) {
+              console.error("Error handling add-offer", err);
+            }
+          }
+        }
+        pickBtn.disabled = true;
+        pendingOffers = [];
+      };
+
+      endBtn.onclick = () => {
+        Object.keys(peers).forEach(k => cleanupPeer(k));
+        try { localStream && localStream.getTracks().forEach(t => t.stop()); } catch { }
+        localStream = null;
+        socket.emit("call:end", { callId: currentCallId, from: myIdEl.value?.trim(), conversationId });
+        currentCallId = null;
+        log("Call ended locally");
+      };
+
+      // Invite new user (inviter)
+      addUserBtn.onclick = async () => {
+        const from = myIdEl.value?.trim();
+        let newUser = newUserIdEl.value?.trim();
+        newUser = newUser.split(",");
+        console.log(newUser)
+        if (!from || !newUser || !currentCallId) return alert("Join/accept a call first, and enter new user id");
+        // notify backend to add user to call
+        socket.emit("call:add-user", { callId: currentCallId, from, newUser });
+      };
+
+      // --- Socket listeners ---
+      socket.on("connect", () => {
+        log("socket connected: " + socket.id);
+      });
+      socket.on("disconnect", () => log("socket disconnected"));
+
+      socket.on("call:group-start:ack", async ({ callId, targets, conversationId }) => {
+        const from = myIdEl.value?.trim();
+        currentCallId = callId;
+        await ensureLocalStream();
+        // send offers to all targets
+        for (const target of targets) {
+          const pc = createPeer(target);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit("call:group-offer", { from, to: target, offer, callId, conversationId });
+        }
+      })
+
+      socket.on("call:call-details", ({ callId, from, to }) => {
+        currentCallId = callId;
+        log(`call:call-details received callId=${callId}`);
+      });
+
+      socket.on("call:InCall", ({ from, to, reason }) => {
+        alert(`User ${from} is already in a call . Reason: ${reason}`);
+        log(`call:InCall from=${from} to=${to} reason=${reason}`);
+      });
+
+      // incoming (initial) - server forwarded call:incoming
+      socket.on("call:incoming", ({ callId, from, to, offer, conversationId: convId, offerType }) => {
+        log(`call:incoming from=${from} callId=${callId} offerType=${offerType || 'initial'}`);
+        pendingOffers.push({ callId, offer, from, offerType });
+        currentCallId = callId;
+        conversationId = convId;
+        pickBtn.disabled = false;
+      });
+
+      // add incoming (initial) - server forwarded call:add-incoming
+      socket.on("call:add-incoming", ({ callId, from, newUser, offerType }) => {
+        pendingOffers.push({ callId, from, offerType });
+        currentCallId = callId;
+        pickBtn.disabled = false;
+      });
+
+      // add call accepted
+      socket.on("call:add-incoming-accepted", async ({ callId, from, newUser }) => {
+        // send the offer to new user via backend routing
+        if (!from || !newUser || !currentCallId) return alert("Join/accept a call first, and enter new user id");
+        await ensureLocalStream();
+        // create PC for the new user
+        const pc = createPeer(newUser);
+        // add local tracks
+        localStream.getTracks().forEach(t => { try { pc.addTrack(t, localStream); } catch (e) { } });
+
+        // create offer and set local description
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("call:add-offer", { callId: currentCallId, from, to: newUser, offer });
+        log(`Invited ${newUser} to callId ${currentCallId} (sent add-offer)`);
+      });
+
+      // when a remote answers our initial offer
+      socket.on("call:answer", async ({ callId, from, answer }) => {
+        log(`call:answer from=${from} callId=${callId}`);
+        const ent = peers[from];
+        if (!ent || !ent.pc) return log("No peer found for answer from " + from);
+        try {
+          await ent.pc.setRemoteDescription(new RTCSessionDescription(answer));
+          log("Applied remote answer for " + from);
+          await applyBufferedCandidates(from);
+        } catch (err) {
+          console.error("Error applying answer", err);
+        }
+      });
+
+      // add-answer: response from invited participant (inviter receives this)
+      socket.on("call:add-answer", async ({ callId, from, answer }) => {
+        log(`call:add-answer from=${from} callId=${callId}`);
+        const ent = peers[from];
+        if (!ent || !ent.pc) {
+          log("No peer entry for add-answer from " + from);
+          return;
+        }
+        try {
+          await ent.pc.setRemoteDescription(new RTCSessionDescription(answer));
+          log("Set remote desc (add-answer) for " + from);
+          await applyBufferedCandidates(from);
+        } catch (e) {
+          console.error("Error setting add-answer remote desc", e);
+        }
+      });
+
+      // add-offer: received when someone invited me (new user)
+      socket.on("call:add-offer", async ({ callId, from, to, offer, offerType }) => {
+        currentCallId = callId;
+        const pc = createPeer(from);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit("call:add-answer", { callId, from: myIdEl.value?.trim(), to: from, answer });
+        await applyBufferedCandidates(from);
+      });
+
+      // ICE candidate targeted at us from another peer
+      socket.on("call:ice-candidate", async ({ callId, from, candidate }) => {
+        if (!from || !candidate) return;
+        if (!peers[from]) {
+          // create placeholder entry so we buffer until pc created
+          peers[from] = { pc: null, pendingCandidates: [], audioEl: null };
+        }
+        const ent = peers[from];
+        if (!ent.pc) {
+          ent.pendingCandidates.push(candidate);
+          log(`Buffered ICE candidate for ${from} (pc not ready)`);
+          return;
+        }
+        if (!ent.pc.remoteDescription || !ent.pc.remoteDescription.type) {
+          ent.pendingCandidates.push(candidate);
+          log(`Buffered ICE candidate for ${from} (remoteDesc missing)`);
+          return;
+        }
+        try {
+          await ent.pc.addIceCandidate(new RTCIceCandidate(candidate));
+          log(`Added ICE candidate from ${from}`);
+        } catch (e) {
+          console.error("Error adding ICE candidate", e);
+        }
+      });
+
+      // server tells new user who are existing participants (invited user receives this)
+      socket.on("call:existing-participants", async ({ callId, participants }) => {
+        currentCallId = callId;
+        for (const p of participants) {
+          if (p === myIdEl.value?.trim()) continue;
+          const pc = createPeer(p);
+          await ensureLocalStream();
+          localStream.getTracks().forEach(t => { try { pc.addTrack(t, localStream); } catch (e) { } });
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit("call:add-offer", { callId, from: myIdEl.value?.trim(), to: p, offer });
+          log(`(newUser) Sent add-offer -> ${p}`);
+        }
+      });
+
+      socket.on("call:new-participant", async ({ callId, userId, from }) => {
+        log(`New participant joined: ${userId} (invited by ${from})`);
+        createPeer(userId);
+      });
+
+      socket.on("call:connected", ({ callId, from, to }) => {
+        log(`call connected ${from} <-> ${to} (callId=${callId})`);
+      });
+
+      socket.on("call:ended", ({ callId, from, reason }) => {
+        log(`call ended by ${from} reason=${reason}`);
+        if (Object.keys(peers).length == 1) {
+          currentCallId = null;
+        }
+        cleanupPeer(from);
+        // Object.keys(peers).forEach(k => cleanupPeer(k));
+      });
+
+      socket.on("call:unavailable", ({ callId, to }) => {
+        log(`call:unavailable ${to} (callId=${callId})`);
+      });
+
+      // cleanup on page close
+      window.addEventListener("beforeunload", () => {
+        Object.keys(peers).forEach(k => cleanupPeer(k));
+        try { socket.disconnect(); } catch { }
+      });
+    })();
+  </script>
+</body>
+
+</html>

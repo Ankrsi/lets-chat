@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pool Ride Driver Simulator (Google Maps)</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Google Maps with geometry library -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDCwzqdVJCZgfyAIM75N7rJwl977imXLdI&libraries=geometry"></script>
+  <style>
+    body { background:#181b2e; color:#fff; font-family: Inter, Arial, sans-serif; margin:0; padding:0; }
+    .container { max-width:780px; margin:32px auto; background:#23264a; border-radius:14px; padding:24px; box-shadow:0 8px 32px #0005; }
+    h1,h2 { font-size:22px; margin-bottom:10px; }
+    label,input,button { display:block; margin-bottom:8px; font-size:16px; }
+    input,button { padding:8px 12px; border-radius:8px; border:none; }
+    input[type=text],input[type=number] { width:100%; }
+    #map { height:320px; margin-bottom:16px; border-radius:12px; }
+    .row { display:flex; gap:14px; }
+    .row > div { flex:1; }
+    button { background:#3142b3; color:#fff; cursor:pointer; margin-top:4px; }
+    button:disabled { opacity:.5; }
+    .status { padding:6px 10px; background:#141820; border-radius:6px; margin:6px 0 0 0; font-size:14px; color:#aabae2; }
+    .log { max-height:120px; white-space:pre-line; background:#111526; padding:9px; border-radius:9px; margin-top:7px; font-size:13px; overflow:auto; }
+    .divider { border-top:2px dashed #3a3f6a; margin:20px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Pool Ride Driver Simulator (Click-to-Move with Google Maps)</h1>
+    <form id="driverForm">
+      <div class="row">
+        <div><label>Backend Socket URL</label><input id="socketUrl" value="http://localhost:4022" /></div>
+        <div><label>Ride ID</label><input id="rideId" placeholder="POOLRIDE123" required /></div>
+        <div><label>Driver ID</label><input id="driverId" placeholder="driver123" required /></div>
+      </div>
+      <label>Encoded Polyline (Google/Map)</label>
+      <input id="polylineInput" required placeholder="Paste encoded polyline string here..." />
+      <div class="row">
+        <div><label>Emit Interval (sec)</label><input id="intervalSec" type="number" min="1" value="3" /></div>
+        <div><label><span title="Also emit driverGeoUpdateKafka?">driverGeoUpdateKafka</span></label><input id="emitKafka" type="checkbox" /></div>
+      </div>
+      <button type="submit">Connect & Load Route</button>
+    </form>
+
+    <div id="map"></div>
+    <div class="status" id="simStatus">Disconnected</div>
+    <div class="log" id="eventLog"></div>
+
+    <div class="divider"></div>
+
+    <h2>Separate Kafka Update Simulator</h2>
+    <form id="kafkaForm">
+      <div class="row">
+        <div><label>Socket URL</label><input id="kafkaSocketUrl" value="http://localhost:4022" /></div>
+        <div><label>Driver ID</label><input id="kafkaDriverId" placeholder="driver123" required /></div>
+      </div>
+      <div class="row">
+        <div><label>Latitude</label><input id="kafkaLat" type="number" step="any" placeholder="19.076" required /></div>
+        <div><label>Longitude</label><input id="kafkaLng" type="number" step="any" placeholder="72.8777" required /></div>
+      </div>
+      <div class="row">
+        <div><label>Emit Interval (sec)</label><input id="kafkaInterval" type="number" min="1" value="3" /></div>
+      </div>
+      <button type="submit">Start Kafka Emission</button>
+      <button type="button" id="stopKafkaBtn" disabled>Stop Kafka Emission</button>
+    </form>
+    <div class="status" id="kafkaStatus">Kafka Mode: Stopped</div>
+    <div class="log" id="kafkaLog"></div>
+  </div>
+
+  <script>
+    let map, marker, polyline, socket, timer = null;
+    let currentPosition = null, polyPoints = [];
+
+    function log(msg) {
+      const el = document.getElementById('eventLog');
+      el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+    function setStatus(txt) { document.getElementById('simStatus').textContent = txt; }
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 13,
+        center: { lat: 19.076, lng: 72.8777 },
+        mapTypeId: "roadmap",
+      });
+    }
+
+    window.onload = initMap;
+
+    // Send coordinate
+    function sendCoordinate(lat, lng, rideId, driverId, encodedPolyline, emitKafka) {
+      if (!socket || !socket.connected) return;
+      socket.emit('locationUpdateFromDriver', {
+        rideId, driverId, lat, lng, encodedPolyline,
+        driverInfo: { first_name:"Demo", last_name:"Driver", phone:9000000000, vehicle_type:"car", vehicle_number:"MH12DEMO001" }
+      });
+      if (emitKafka) socket.emit('driverGeoUpdateKafka', { taxi_driver_id: driverId, lat, lng });
+      log(`Sent → (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+    }
+
+    // Driver simulator form
+    document.getElementById('driverForm').onsubmit = function(e) {
+      e.preventDefault();
+      if (socket && socket.connected) socket.disconnect();
+      if (timer) clearInterval(timer);
+      setStatus('Connecting...');
+      log('Connecting socket...');
+
+      const url = document.getElementById('socketUrl').value.trim();
+      const rideId = document.getElementById('rideId').value.trim();
+      const driverId = document.getElementById('driverId').value.trim();
+      const encodedPolyline = document.getElementById('polylineInput').value.trim();
+      const interval = Math.max(1, parseInt(document.getElementById('intervalSec').value, 10));
+      const emitKafka = document.getElementById('emitKafka').checked;
+
+      try {
+        polyPoints = google.maps.geometry.encoding.decodePath(encodedPolyline);
+        if (!polyPoints.length) throw new Error('Polyline decode failed');
+      } catch (err) {
+        setStatus('Invalid polyline!');
+        log('Decode error: ' + err);
+        return;
+      }
+
+      // Clear map
+      if (polyline) polyline.setMap(null);
+      if (marker) marker.setMap(null);
+
+      // Draw polyline and marker
+      polyline = new google.maps.Polyline({
+        path: polyPoints,
+        geodesic: true,
+        strokeColor: "#00bfff",
+        strokeOpacity: 0.8,
+        strokeWeight: 5,
+      });
+      polyline.setMap(map);
+      marker = new google.maps.Marker({
+        position: polyPoints[0],
+        map,
+        title: "Driver",
+      });
+      map.fitBounds(new google.maps.LatLngBounds(...polyPoints));
+      currentPosition = polyPoints[0];
+
+      // Click-to-move
+      polyline.addListener("click", (e) => {
+        const clicked = e.latLng;
+        currentPosition = clicked;
+        marker.setPosition(clicked);
+        sendCoordinate(clicked.lat(), clicked.lng(), rideId, driverId, encodedPolyline, emitKafka);
+        setStatus(`Moved to (${clicked.lat().toFixed(5)}, ${clicked.lng().toFixed(5)})`);
+      });
+
+      // Connect socket
+      socket = io(url, { transports:['websocket'], autoConnect:true });
+      socket.on('connect', () => {
+        setStatus('Connected');
+        log('Socket connected!');
+        timer = setInterval(() => {
+          if (currentPosition)
+            sendCoordinate(currentPosition.lat(), currentPosition.lng(), rideId, driverId, encodedPolyline, emitKafka);
+        }, interval * 1000);
+      });
+      socket.on('disconnect', () => {
+        setStatus('Disconnected');
+        log('Socket disconnected');
+        if (timer) clearInterval(timer);
+      });
+    };
+
+    /* ============ SEPARATE KAFKA EMITTER ============ */
+    let kafkaSocket = null, kafkaTimer = null;
+    const kafkaStatus = document.getElementById('kafkaStatus');
+    const kafkaLog = document.getElementById('kafkaLog');
+    const stopKafkaBtn = document.getElementById('stopKafkaBtn');
+
+    function kafkaLogMsg(msg) {
+      kafkaLog.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      kafkaLog.scrollTop = kafkaLog.scrollHeight;
+    }
+
+    document.getElementById('kafkaForm').onsubmit = function(e) {
+      e.preventDefault();
+      if (kafkaTimer) clearInterval(kafkaTimer);
+      if (kafkaSocket && kafkaSocket.connected) kafkaSocket.disconnect();
+
+      const url = document.getElementById('kafkaSocketUrl').value.trim();
+      const driverId = document.getElementById('kafkaDriverId').value.trim();
+      const lat = parseFloat(document.getElementById('kafkaLat').value);
+      const lng = parseFloat(document.getElementById('kafkaLng').value);
+      const interval = Math.max(1, parseInt(document.getElementById('kafkaInterval').value, 10));
+
+      kafkaStatus.textContent = 'Connecting Kafka socket...';
+      kafkaSocket = io(url, { transports:['websocket'], autoConnect:true });
+
+      kafkaSocket.on('connect', () => {
+        kafkaStatus.textContent = 'Kafka Connected (emitting...)';
+        kafkaLogMsg('Connected to Kafka socket');
+        stopKafkaBtn.disabled = false;
+
+        kafkaTimer = setInterval(() => {
+          kafkaSocket.emit('driverGeoUpdateKafka', { taxi_driver_id: driverId, lat, lng });
+          kafkaLogMsg(`Kafka → ${driverId} (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+        }, interval * 1000);
+      });
+
+      kafkaSocket.on('disconnect', () => {
+        kafkaStatus.textContent = 'Kafka Disconnected';
+        kafkaLogMsg('Kafka socket disconnected');
+        if (kafkaTimer) clearInterval(kafkaTimer);
+        stopKafkaBtn.disabled = true;
+      });
+    };
+
+    stopKafkaBtn.onclick = function() {
+      if (kafkaTimer) clearInterval(kafkaTimer);
+      if (kafkaSocket && kafkaSocket.connected) kafkaSocket.disconnect();
+      kafkaStatus.textContent = 'Kafka Mode: Stopped';
+      kafkaLogMsg('Kafka emission stopped.');
+      stopKafkaBtn.disabled = true;
+    };
+  </script>
+</body>
+</html>

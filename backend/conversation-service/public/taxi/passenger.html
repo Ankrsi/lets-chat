@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Passenger Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+<style>
+  body{margin:0;padding:24px;font-family:system-ui;color:#e5e7eb;background:#0f172a;}
+  .card{background:#0b1220;padding:18px;border-radius:14px;max-width:920px;margin:auto;}
+  .status{padding:6px 12px;border-radius:999px;margin-bottom:12px;display:inline-block;}
+  .status.ok{background:#052e1a;color:#86efac;}
+  .status.warn{background:#2a1005;color:#fde68a;}
+  .status.err{background:#2a0b0b;color:#fecaca;}
+
+  img{border-radius:50%;width:60px;height:60px;object-fit:cover;margin-right:10px;}
+  .driver-info{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+  .stat-row{margin-bottom:6px;}
+
+  .ride-box{
+    display:flex;
+    gap:10px;
+    margin-bottom:14px;
+  }
+  input{
+    flex:1;
+    padding:10px;
+    border-radius:10px;
+    border:none;
+    outline:none;
+  }
+  button{
+    padding:10px 16px;
+    border-radius:10px;
+    border:none;
+    cursor:pointer;
+    background:#2563eb;
+    color:white;
+    font-weight:600;
+  }
+</style>
+</head>
+
+<body>
+<div class="card">
+  <h2>Passenger View</h2>
+
+  <div class="ride-box">
+    <input id="rideInput" placeholder="Enter Ride ID (e.g. ABC123DEF456)">
+    <button id="subscribeBtn">Subscribe</button>
+  </div>
+
+  <div id="status" class="status warn">Not subscribed</div>
+
+  <div class="driver-info">
+    <img id="profileImage" src="" alt="Driver Profile">
+    <div>
+      <p><b>Name:</b> <span id="driverName">-</span></p>
+      <p><b>Phone:</b> <span id="driverPhone">-</span></p>
+    </div>
+  </div>
+
+  <div>
+    <p class="stat-row"><b>Vehicle Type:</b> <span id="vehicleType">-</span></p>
+    <p class="stat-row"><b>Brand & Model:</b> <span id="vehicleBrandModel">-</span></p>
+    <p class="stat-row"><b>Color:</b> <span id="vehicleColor">-</span></p>
+    <p class="stat-row"><b>Vehicle Number:</b> <span id="vehicleNumber">-</span></p>
+    <p class="stat-row"><b>Manufacturing Year:</b> <span id="vehicleYear">-</span></p>
+    <p class="stat-row"><b>Capacity:</b> <span id="vehicleCapacity">-</span></p>
+    <p class="stat-row"><b>Location:</b> <span id="location">-</span></p>
+    <p class="stat-row"><b>Update Count:</b> <span id="counter">0</span></p>
+    <p class="stat-row"><b>Encoded Route:</b> <span id="route">-</span></p>
+  </div>
+</div>
+
+<script>
+const socket = io("http://localhost:4022", { transports:["websocket"] });
+
+let currentRideId = null;
+
+// Elements
+const statusEl = document.getElementById("status");
+const rideInput = document.getElementById("rideInput");
+const subscribeBtn = document.getElementById("subscribeBtn");
+
+const driverNameEl = document.getElementById("driverName");
+const driverPhoneEl = document.getElementById("driverPhone");
+const profileImageEl = document.getElementById("profileImage");
+const vehicleTypeEl = document.getElementById("vehicleType");
+const vehicleBrandModelEl = document.getElementById("vehicleBrandModel");
+const vehicleColorEl = document.getElementById("vehicleColor");
+const vehicleNumberEl = document.getElementById("vehicleNumber");
+const vehicleYearEl = document.getElementById("vehicleYear");
+const vehicleCapacityEl = document.getElementById("vehicleCapacity");
+const locationEl = document.getElementById("location");
+const counterEl = document.getElementById("counter");
+const routeEl = document.getElementById("route");
+
+function setStatus(text,type="ok"){
+  statusEl.textContent=text;
+  statusEl.className="status";
+  statusEl.classList.add(type);
+}
+
+// Subscribe button click
+subscribeBtn.addEventListener("click", () => {
+  const rideId = rideInput.value.trim();
+
+  if (!rideId) {
+    setStatus("Please enter Ride ID","warn");
+    return;
+  }
+
+  if (currentRideId) {
+    socket.emit("unsubscribe", { rideId: currentRideId });
+  }
+
+  currentRideId = rideId;
+  socket.emit("subscribe", { rideId });
+
+  setStatus(`Subscribed to ride ${rideId}`,"ok");
+});
+
+// Driver live updates
+socket.on("locationUpdateFromDriver", (data) => {
+  const driver = data.driverInfo || {};
+
+  driverNameEl.textContent = `${driver.first_name || "-"} ${driver.last_name || "-"}`;
+  driverPhoneEl.textContent = driver.phone || "-";
+  profileImageEl.src = driver.profile_image || "";
+
+  vehicleTypeEl.textContent = driver.vehicle_type || "-";
+  vehicleBrandModelEl.textContent = `${driver.brand || "-"} ${driver.model || "-"}`;
+  vehicleColorEl.textContent = driver.color || "-";
+  vehicleNumberEl.textContent = driver.vehicle_number || "-";
+  vehicleYearEl.textContent = driver.manufacturing_year || "-";
+  vehicleCapacityEl.textContent = driver.capacity || "-";
+
+  locationEl.textContent = `${data.lat.toFixed(6)}, ${data.lng.toFixed(6)}`;
+  counterEl.textContent = data.counter || 0;
+  routeEl.textContent = data.encodedPolyline || "-";
+});
+
+// Ride cancellation events
+socket.on("rideCanceledByDriver", () => {
+  setStatus("Ride canceled by driver","err");
+  alert("Ride canceled by driver");
+});
+
+socket.on("rideCanceledByPassenger", () => {
+  setStatus("Ride canceled by passenger","err");
+  alert("Ride canceled by passenger");
+});
+
+socket.on("disconnect", () => {
+  setStatus("Disconnected from server","err");
+});
+</script>
+</body>
+</html>

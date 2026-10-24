@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Delivery Location Tester</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: system-ui;
+            background: #0f172a;
+            color: #e5e7eb;
+        }
+
+        .card {
+            background: #0b1220;
+            padding: 20px;
+            border-radius: 14px;
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        .status {
+            padding: 8px 14px;
+            border-radius: 999px;
+            margin-bottom: 14px;
+            display: inline-block;
+        }
+
+        .success {
+            background: #052e1a;
+            color: #86efac;
+        }
+
+        .warn {
+            background: #2a1005;
+            color: #fde68a;
+        }
+
+        .error {
+            background: #2a0b0b;
+            color: #fecaca;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        input,
+        select {
+            padding: 10px;
+            border-radius: 10px;
+            border: none;
+            outline: none;
+            flex: 1;
+        }
+
+        button {
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .stat {
+            background: #02061780;
+            padding: 12px;
+            border-radius: 10px;
+        }
+
+        .label {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        .value {
+            font-size: 16px;
+            margin-top: 6px;
+        }
+
+        #logs {
+            height: 220px;
+            overflow: auto;
+            background: #020617;
+            padding: 10px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+
+        <h2>📍 Delivery Location Tester</h2>
+
+        <div class="row">
+            <select id="envSelect">
+                <option value="local">Local</option>
+                <option value="prod">Production</option>
+                <option value="custom">Custom</option>
+            </select>
+
+            <input id="socketUrl">
+
+            <input id="tokenInput" placeholder="Auth Token">
+
+            <button id="connectBtn" class="btn-primary">
+                Connect
+            </button>
+        </div>
+
+        <div id="status" class="status warn">
+            Not Connected
+        </div>
+
+        <div class="row">
+            <input id="deliveryId" placeholder="Delivery ID">
+
+            <button id="subscribeBtn" class="btn-primary">
+                Subscribe
+            </button>
+
+            <button id="unsubscribeBtn" class="btn-danger">
+                Unsubscribe
+            </button>
+        </div>
+
+        <div class="row">
+            <button id="sendOnce" class="btn-primary">
+                Send Location Once
+            </button>
+
+            <select id="intervalSelect">
+                <option value="">Select Interval</option>
+                <option value="3000">3 Seconds</option>
+                <option value="5000">5 Seconds</option>
+                <option value="10000">10 Seconds</option>
+            </select>
+
+            <button id="startAuto" class="btn-primary">
+                Start Auto
+            </button>
+
+            <button id="stopAuto" class="btn-danger">
+                Stop Auto
+            </button>
+        </div>
+
+        <div class="grid">
+
+            <div class="stat">
+                <div class="label">Latitude</div>
+                <div id="lat" class="value">-</div>
+            </div>
+
+            <div class="stat">
+                <div class="label">Longitude</div>
+                <div id="lng" class="value">-</div>
+            </div>
+
+            <div class="stat">
+                <div class="label">Counter</div>
+                <div id="counter" class="value">0</div>
+            </div>
+
+            <div class="stat">
+                <div class="label">Time</div>
+                <div id="time" class="value">-</div>
+            </div>
+
+        </div>
+
+        <div id="logs"></div>
+
+    </div>
+
+    <script>
+
+        const ENV_URLS = {
+            local: "http://localhost:4022",
+            prod: "wss://superapp-event-service.testsdlc.in"
+        };
+
+        let socket = null;
+        let deliveryId = null;
+        let autoTimer = null;
+
+        let counter = 0;
+        let lat = 9.5754717;
+        let lng = -13.6198829;
+
+        const status = document.getElementById("status");
+
+        function setStatus(msg, type = "warn") {
+            status.innerHTML = msg;
+            status.className = "status " + type;
+        }
+
+        function log(data) {
+            const box = document.getElementById("logs");
+            box.innerHTML += data + "\n";
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function stopAuto() {
+            if (autoTimer) {
+                clearInterval(autoTimer);
+                autoTimer = null;
+                setStatus("Auto stopped", "warn");
+            }
+        }
+
+        function updateSocketURL() {
+
+            const env = document.getElementById("envSelect").value;
+
+            const input = document.getElementById("socketUrl");
+
+            if (env === "custom") {
+                input.value = "";
+                input.removeAttribute("readonly");
+            }
+            else {
+                input.value = ENV_URLS[env];
+                input.setAttribute("readonly", true);
+            }
+
+        }
+
+        updateSocketURL();
+
+        document.getElementById("envSelect").addEventListener("change", updateSocketURL);
+
+        document.getElementById("connectBtn").onclick = () => {
+
+            const url = document.getElementById("socketUrl").value.trim();
+
+            const token = document.getElementById("tokenInput").value.trim();
+
+            if (socket) socket.disconnect();
+
+            socket = io(url, {
+                transports: ["websocket"],
+                auth: token ? { token } : {}
+            });
+
+            socket.on("connect", () => {
+                setStatus("Connected", "success");
+                log("Connected");
+            });
+
+            socket.on("disconnect", () => {
+                stopAuto();
+                setStatus("Disconnected", "error");
+            });
+
+            socket.on("connect_error", (err) => {
+                setStatus(err.message, "error");
+            });
+
+            socket.on("subscribedDeliveryTracking", (data) => {
+                log("Subscribed\n" + JSON.stringify(data, null, 2));
+            });
+
+            socket.on("unsubscribedDeliveryTracking", (data) => {
+                log("unsubscribedDeliveryTracking\n" + JSON.stringify(data, null, 2));
+                setStatus(data.message, "success");
+                deliveryId = null;
+            });
+
+            socket.on("deliveryTrackingUpdate", (data) => {
+                log("deliveryTrackingUpdate\n" + JSON.stringify(data, null, 2));
+            });
+
+            socket.on("deliveryStream", (data) => {
+                log("deliveryStream\n" + JSON.stringify(data, null, 2));
+            });
+
+        };
+
+        document.getElementById("subscribeBtn").onclick = () => {
+
+            deliveryId = document.getElementById("deliveryId").value.trim();
+
+            socket.emit("subscribeDeliveryTracking", {
+                deliveryId
+            });
+
+        };
+
+        document.getElementById("unsubscribeBtn").onclick = () => {
+
+            if (!socket || !socket.connected) {
+                setStatus("Connect socket first", "warn");
+                return;
+            }
+
+            if (!deliveryId) {
+                setStatus("No delivery subscribed", "warn");
+                return;
+            }
+
+            socket.emit("unsubscribeDeliveryTracking", {
+                deliveryId: deliveryId
+            });
+
+        };
+
+        function sendLocation() {
+
+            if (!deliveryId) {
+                alert("Enter Delivery ID");
+                return;
+            }
+
+            counter++;
+
+            lat += Math.random() * 0.001;
+            lng += Math.random() * 0.001;
+
+            const payload = {
+
+                deliveryId,
+
+                deliveryPartnerId: "driver123",
+
+                latitude: lat,
+
+                longitude: lng,
+
+                heading: 180,
+
+                speed: 35,
+
+                accuracy: 5,
+
+                timestamp: new Date().toISOString(),
+
+                counter
+
+            };
+
+            socket.emit("deliveryLocationUpdate", payload);
+
+            document.getElementById("lat").innerHTML = lat.toFixed(6);
+            document.getElementById("lng").innerHTML = lng.toFixed(6);
+            document.getElementById("counter").innerHTML = counter;
+            document.getElementById("time").innerHTML = new Date().toLocaleTimeString();
+
+            log("Sent\n" + JSON.stringify(payload, null, 2));
+
+        }
+
+        document.getElementById("sendOnce").onclick = sendLocation;
+
+        document.getElementById("startAuto").onclick = () => {
+
+            const interval = document.getElementById("intervalSelect").value;
+
+            if (!interval) {
+                alert("Select interval");
+                return;
+            }
+
+            stopAuto();
+
+            autoTimer = setInterval(sendLocation, Number(interval));
+
+            setStatus("Auto Started", "success");
+
+        };
+
+        document.getElementById("stopAuto").onclick = stopAuto;
+
+    </script>
+
+</body>
+
+</html>

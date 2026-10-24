@@ -1,0 +1,17 @@
+# Dependency directories
+node_modules/
+dist/
+# Environment variables
+.env
+# IDE files
+.vscode/
+.idea/
+# Logs
+*.log
+.npmignore
+bin
+/turn-server/certs
+/turn-server/turnserver.conf
+/src/generated/prisma
+docker-compose.yml
+

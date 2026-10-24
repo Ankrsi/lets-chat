@@ -1,0 +1,17 @@
+#### router.post("/send-multicast", sendMulticastNotification); ####
+curl -X POST http://localhost:4019/api/v1/fcm/send-multicast \
+  -H "Content-Type: application/json" \
+  -d '{"devices":[{token,device_type}],"notification":{title: "", body: ""}, data:{}, android: {}, apns: {}}'
+
+#### router.post("/send", verifyInternalRequest, sendNotification); ####
+curl -X POST http://localhost:4019/api/v1/fcm/send \
+  -H "Content-Type: application/json" \
+  -d '{"token":"","notification":{title: "", body: ""}, data:{}, device_type: "ios/android", android: {}, apns: {}}'
+
+#### router.post("/send-multi-fcms", verifyInternalRequest, sendMultiNotification); ####
+curl -X POST http://localhost:4019/api/v1/fcm/send-multi-fcms \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"receiverPhone":"", "user_id":"","tokens":[],"notification":{title: "", body: ""}, data:{}, device_type: "ios/android", android: {}, apns: {}}'
+
+  

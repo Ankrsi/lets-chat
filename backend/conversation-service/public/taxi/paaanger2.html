@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Passenger Dashboard</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f4f4f4;padding:20px}
+.dashboard{max-width:800px;margin:auto;background:white;padding:20px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.1)}
+.section{margin-bottom:20px}
+.input-group{display:flex;gap:10px}
+input{padding:8px;border:1px solid #ccc;border-radius:4px}
+button{padding:10px 15px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer}
+button:hover{background:#218838}
+.live-data{background:#e9ffe9;padding:15px;border-radius:8px;font-weight:bold;color:#28a745}
+.logs{background:#f8f9fa;padding:10px;border-radius:4px;max-height:200px;overflow-y:auto}
+</style>
+</head>
+<body>
+<div class="dashboard">
+<h1>Passenger Dashboard</h1>
+<div class="section">
+<h2>Join Ride</h2>
+<div class="input-group">
+<label>Ride ID: <input id="rideId" value="test-ride-123"></label>
+<button onclick="joinRide()">Join Ride</button>
+</div>
+<button onclick="testEmission()">Test Fare Emission</button>
+</div>
+
+<div class="section">
+<h2>Live Fare</h2>
+<div id="liveData" class="live-data">Waiting...</div>
+</div>
+
+<div class="section">
+<h2>Logs</h2>
+<div id="logs" class="logs"></div>
+<button onclick="clearLogs()">Clear Logs</button>
+</div>
+</div>
+
+<script>
+const socket=io('http://localhost:4022');
+socket.on('connect',()=>log('Connected'));
+socket.on('liveFareUpdate',(data)=>{log('liveFareUpdate'); updateLiveData(data);});
+
+function joinRide(){const rideId=document.getElementById('rideId').value; socket.emit('subscribe',{rideId}); log(`Joined ride ${rideId}`);}
+function updateLiveData(data){document.getElementById('liveData').innerHTML=`Fare: ₹${data.currentFare}<br>Distance: ${data.totalDistance.toFixed(2)} km<br>Time: ${data.totalTime.toFixed(2)} min<br>Status: ${data.status}`;}
+function testEmission(){updateLiveData({currentFare:87,totalDistance:0.5,totalTime:1,status:'ongoing'}); log('Test emission triggered');}
+function log(msg){document.getElementById('logs').innerHTML+=`<p>${msg}</p>`;document.getElementById('logs').scrollTop=document.getElementById('logs').scrollHeight;}
+function clearLogs(){document.getElementById('logs').innerHTML='';}
+</script>
+</body>
+</html>

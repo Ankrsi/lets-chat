@@ -1,0 +1,104 @@
+<!-- <!DOCTYPE html>
+<html>
+
+<body>
+  <h3>TURN Server Test</h3>
+  <pre id="log"></pre>
+  <script>
+    async function testTurn() {
+      const log = msg => document.getElementById('log').textContent += msg + '\n';
+
+      const config = {
+        iceTransportPolicy: "relay",
+        bundlePolicy: "max-bundle",
+        rtcpMuxPolicy: "require",
+        iceServers: [
+          {
+            urls: [
+              "turn:13.36.13.236:3478?transport=tcp",
+              "turn:13.36.13.236:3478?transport=udp",
+              "turns:omnia.onsdlc.cloud:5349",
+              // "turn:89.116.121.48:3478?transport=udp",
+              // "turn:89.116.121.48:3478?transport=tcp",
+              // "turns:superapp-event-service.testsdlc.in:5349"
+            ],
+            username: 'sdlccorp@superapp@eventserverturn',
+            credential: 'superappturn1a9k9s7.@sdlccorp.@docker'
+          },
+        ]
+      };
+
+      const pc = new RTCPeerConnection(config);
+      pc.onicecandidate = e => {
+        if (e.candidate)
+          log('Candidate: ' + e.candidate.candidate);
+      };
+      pc.createDataChannel("test");
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      log('Local description set. Waiting for ICE candidates...');
+    }
+    testTurn();
+  </script>
+</body>
+
+</html> -->
+
+<!DOCTYPE html>
+<html>
+
+<body>
+  <h3>TURN Server Test</h3>
+  <pre id="log"></pre>
+
+  <script>
+    async function testTurn() {
+      const log = msg => document.getElementById('log').textContent += msg + '\n';
+
+      const config = {
+        iceTransportPolicy: "relay",
+        bundlePolicy: "max-bundle",
+        rtcpMuxPolicy: "require",
+        iceServers: [
+          {
+            urls: [
+              // "turn:13.36.13.236:3478?transport=tcp",
+              // "turn:52.47.61.27:3478?transport=tcp",
+              "turn:15.236.165.137:3478?transport=tcp",
+              // "turn:13.36.13.236:3478?transport=udp",
+              // "turn:52.47.61.27:3478?transport=udp",
+              "turn:15.236.165.137:3478?transport=udp",
+              // "turns:omnia.onsdlc.cloud:5349",
+              // "turns:superapp-event-service.testsdlc.in:5349"
+              "turns:adminpanel.omniiaapp.com:5349"
+            ],
+            username: "sdlccorp@superapp@eventserverturn",
+            credential: "superappturn1a9k9s7.@sdlccorp.@docker"
+          }
+        ]
+      };
+
+      const pc = new RTCPeerConnection(config);
+
+      pc.onicecandidate = e => {
+        if (e.candidate)
+          log("Candidate: " + e.candidate.candidate);
+      };
+
+      pc.onicegatheringstatechange = () => {
+        log("ICE gathering state: " + pc.iceGatheringState);
+      };
+
+      pc.createDataChannel("test");
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      log("Local description set. Waiting for ICE candidates...");
+    }
+
+    testTurn();
+  </script>
+
+</body>
+</html>

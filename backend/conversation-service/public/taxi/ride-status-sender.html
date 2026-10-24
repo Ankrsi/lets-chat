@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ride Status Sender</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <!-- Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+
+<body class="min-h-screen bg-slate-50 text-slate-800">
+  <div class="max-w-3xl mx-auto p-4 md:p-6">
+
+    <header class="flex items-center justify-between mb-4">
+      <h1 class="text-xl md:text-2xl font-semibold">Ride Status Sender</h1>
+      <div id="connBadge"
+        class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-slate-200 text-slate-700">
+        <span class="inline-block h-2 w-2 rounded-full bg-slate-400"></span>
+        Disconnected
+      </div>
+    </header>
+
+    <section class="bg-white shadow-sm rounded-xl border border-slate-200">
+
+      <!-- 🔐 Token Input -->
+      <div class="p-4 border-b border-slate-200">
+        <label class="block text-sm font-medium mb-1">JWT Token</label>
+        <input id="jwtToken" placeholder="Paste JWT token here"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+
+      <!-- Form -->
+      <div class="p-4 border-b border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="md:col-span-1">
+          <label class="block text-sm font-medium mb-1">Ride ID</label>
+          <input id="rideId" value="ride123" class="w-full rounded-lg border border-slate-300 px-3 py-2" />
+        </div>
+
+        <div class="md:col-span-1">
+          <label class="block text-sm font-medium mb-1">Status</label>
+          <select id="status" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+            <option value="CREATED">CREATED</option>
+            <option value="ACCEPTED">ACCEPTED</option>
+            <option value="STARTED">STARTED</option>
+            <option value="CANCELLED_BY_DRIVER">CANCELLED_BY_DRIVER</option>
+            <option value="CANCELLED_BY_PASSENGER">CANCELLED_BY_PASSENGER</option>
+            <option value="COMPLETED">COMPLETED</option>
+          </select>
+        </div>
+
+        <div class="md:col-span-1 flex items-end gap-2">
+          <button id="sendBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg">Send Status</button>
+        </div>
+      </div>
+
+      <div class="p-4">
+        <ul id="timeline" class="space-y-3"></ul>
+      </div>
+
+    </section>
+  </div>
+
+  <script>
+    let socket;
+
+    const connBadge = document.getElementById("connBadge");
+    const sendBtn = document.getElementById("sendBtn");
+    const timeline = document.getElementById("timeline");
+
+    function connectSocket() {
+      const token = document.getElementById("jwtToken").value.trim();
+      if (!token) return alert("JWT Token required");
+
+      // local url 
+      // socket = io("http://localhost:4022", {
+      //   transports: ["websocket"],
+      //   auth: { token } // ✅ token passed here
+      // });
+
+      // Production Url
+      socket = io("wss://superapp-event-service.testsdlc.in", {
+        transports: ["websocket"],
+        auth: { token } // ✅ token passed here
+      });
+
+      socket.on("connect", () => {
+        connBadge.textContent = "Connected";
+      });
+
+      socket.on("disconnect", r => {
+        connBadge.textContent = "Disconnected";
+      });
+    }
+
+    sendBtn.addEventListener("click", () => {
+      if (!socket || !socket.connected) connectSocket();
+
+      const rideId = document.getElementById("rideId").value.trim();
+      const status = document.getElementById("status").value;
+
+      const payload = { rideId, status, ts: Date.now() };
+      socket.emit("setRideStatus", payload);
+
+      const li = document.createElement("li");
+      li.textContent = JSON.stringify(payload);
+      timeline.appendChild(li);
+    });
+  </script>
+
+</body>
+
+</html>

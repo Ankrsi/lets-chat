@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ride Status Receiver</title>
+
+  <!-- Tailwind Play CDN (dev use) -->
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <!-- Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+
+<body class="min-h-screen bg-slate-50 text-slate-800">
+  <div class="max-w-3xl mx-auto p-4 md:p-6">
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-4">
+      <h1 class="text-xl md:text-2xl font-semibold">Ride Status Receiver</h1>
+      <div id="connBadge"
+        class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-slate-200 text-slate-700">
+        <span class="inline-block h-2 w-2 rounded-full bg-slate-400"></span>
+        Disconnected
+      </div>
+    </header>
+
+    <!-- Card -->
+    <section class="bg-white shadow-sm rounded-xl border border-slate-200">
+      <!-- Subscribe Bar -->
+      <div class="p-4 border-b border-slate-200 flex flex-col md:flex-row gap-3 md:items-end">
+
+        <!-- 🔐 JWT Token FIRST -->
+        <div class="flex-1">
+          <label class="block text-sm font-medium mb-1">JWT Token</label>
+          <input id="jwtToken" placeholder="Paste JWT token here"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+
+        <!-- Ride ID SECOND -->
+        <div class="flex-1">
+          <label for="rideId" class="block text-sm font-medium mb-1">Ride ID</label>
+          <input id="rideId" value="ride123" placeholder="Enter Ride ID"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+
+        <button id="subscribeBtn"
+          class="inline-flex items-center justify-center rounded-lg bg-indigo-600 text-white px-4 py-2 hover:bg-indigo-700 active:bg-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          Subscribe
+        </button>
+      </div>
+
+      <!-- Logs / Timeline -->
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-base font-medium">Live Events</h2>
+          <button id="clearBtn" class="text-sm text-slate-600 hover:text-slate-800 underline">Clear</button>
+        </div>
+
+        <div id="logs" class="h-[360px] overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <ul id="timeline" class="space-y-3"></ul>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toastHost" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <script>
+    let socket;
+
+    const connBadge = document.getElementById("connBadge");
+    const subscribeBtn = document.getElementById("subscribeBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const timeline = document.getElementById("timeline");
+
+    function now() {
+      return new Date().toLocaleTimeString();
+    }
+
+    function setConn(state) {
+      if (state === "connected") {
+        connBadge.innerHTML = '<span class="inline-block h-2 w-2 rounded-full bg-emerald-500"></span> Connected';
+        connBadge.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-emerald-50 text-emerald-700 border border-emerald-200";
+      } else if (state === "connecting") {
+        connBadge.innerHTML = '<span class="inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span> Connecting';
+        connBadge.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-amber-50 text-amber-700 border border-amber-200";
+      } else {
+        connBadge.innerHTML = '<span class="inline-block h-2 w-2 rounded-full bg-slate-400"></span> Disconnected';
+        connBadge.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-slate-100 text-slate-700 border border-slate-200";
+      }
+    }
+
+    function addTimelineItem({ title, body, type = "info" }) {
+      const colors = {
+        info: "bg-sky-100 text-sky-800 border-sky-200",
+        success: "bg-emerald-100 text-emerald-800 border-emerald-200",
+        warn: "bg-amber-100 text-amber-900 border-amber-200",
+        error: "bg-rose-100 text-rose-800 border-rose-200",
+      };
+      const badgeColors = {
+        info: "bg-sky-600",
+        success: "bg-emerald-600",
+        warn: "bg-amber-600",
+        error: "bg-rose-600",
+      };
+      const li = document.createElement("li");
+      li.className = "flex items-start gap-3";
+      li.innerHTML = `
+        <div class="mt-1 h-2 w-2 rounded-full ${badgeColors[type] ?? badgeColors.info}"></div>
+        <div class="flex-1">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium">${title}</div>
+            <div class="text-xs text-slate-500">${now()}</div>
+          </div>
+          <div class="mt-1 text-sm rounded-md border px-3 py-2 ${colors[type] ?? colors.info}">
+            <code class="text-[12px]">${body}</code>
+          </div>
+        </div>
+      `;
+      timeline.appendChild(li);
+      document.getElementById("logs").scrollTop = document.getElementById("logs").scrollHeight;
+    }
+
+    function toast(message, kind = "info") {
+      const host = document.getElementById("toastHost");
+      const base = document.createElement("div");
+      const palettes = {
+        info: "bg-sky-600",
+        success: "bg-emerald-600",
+        warn: "bg-amber-600",
+        error: "bg-rose-600",
+      };
+      base.className = `text-white px-3 py-2 rounded-lg shadow ${palettes[kind] ?? palettes.info}`;
+      base.textContent = message;
+      host.appendChild(base);
+      setTimeout(() => {
+        base.classList.add("opacity-0", "transition-opacity", "duration-200");
+        setTimeout(() => base.remove(), 220);
+      }, 2500);
+    }
+
+    function connectSocket() {
+      const token = document.getElementById("jwtToken").value.trim();
+      if (!token) {
+        toast("JWT Token required", "warn");
+        return;
+      }
+
+      setConn("connecting");
+  // proudcion url 
+      socket = io("wss://superapp-event-service.testsdlc.in", {
+        transports: ["websocket"],
+        auth: { token }
+      });
+
+      //local url 
+      // socket = io("http://localhost:4022", {
+      //   transports: ["websocket"],
+      //   auth: { token }
+      // });
+
+      bindSocketEvents();
+    }
+
+    function bindSocketEvents() {
+      socket.on("connect", () => {
+        setConn("connected");
+        toast(`Connected: ${socket.id}`, "success");
+        addTimelineItem({ title: "Connected", body: `Socket ID: ${socket.id}`, type: "success" });
+      });
+
+      socket.on("disconnect", (reason) => {
+        setConn("disconnected");
+        toast(`Disconnected: ${reason}`, "warn");
+        addTimelineItem({ title: "Disconnected", body: `Reason: ${reason}`, type: "warn" });
+      });
+
+      socket.on("connect_error", (err) => {
+        setConn("disconnected");
+        toast(`Connect error: ${err.message}`, "error");
+        addTimelineItem({ title: "Connect Error", body: err?.message || "Unknown", type: "error" });
+      });
+
+      socket.on("rideStatusUpdate", (evt) => {
+        const payload = JSON.stringify(evt, null, 2);
+        addTimelineItem({ title: "Ride Status Update", body: payload, type: "info" });
+        toast("Ride status update", "info");
+      });
+
+      socket.on("rideStream", (evt) => {
+        const rideId = document.getElementById("rideId").value.trim();
+        if (!evt || evt.rideId !== rideId) return;
+
+        const payload = JSON.stringify(evt, null, 2);
+
+        switch (evt.type) {
+          case "status":
+            addTimelineItem({ title: "Status Event", body: payload, type: "info" });
+            toast("Status update", "info");
+            break;
+          case "fare":
+            addTimelineItem({ title: "Fare Update", body: payload, type: "success" });
+            toast("Fare updated", "success");
+            break;
+          case "location":
+            addTimelineItem({ title: "Driver Location", body: payload, type: "warn" });
+            toast("Driver location", "warn");
+            break;
+          default:
+            addTimelineItem({ title: "Unknown Event", body: payload, type: "error" });
+            toast("Unknown event", "error");
+        }
+      });
+    }
+
+    subscribeBtn.addEventListener("click", () => {
+      if (!socket) connectSocket();
+
+      const rideId = document.getElementById("rideId").value.trim();
+      if (!rideId) {
+        toast("Ride ID required", "warn");
+        addTimelineItem({ title: "Validation", body: "Ride ID is empty", type: "warn" });
+        return;
+      }
+      socket.emit("subscribe", { rideId });
+      toast(`Subscribed to ${rideId}`, "success");
+      addTimelineItem({ title: "Subscribed", body: `rideId="${rideId}"`, type: "success" });
+    });
+
+    clearBtn.addEventListener("click", () => {
+      timeline.innerHTML = "";
+      toast("Logs cleared", "info");
+    });
+  </script>
+</body>
+
+</html>

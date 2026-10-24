@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Passenger Ride Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    fieldset { margin-bottom: 12px; }
+    label { display: inline-block; width: 140px; }
+    input { padding: 6px; margin: 4px 0; width: 260px; }
+    button { margin-right: 8px; margin-bottom: 8px; }
+    #log { white-space: pre-wrap; background: #111; color: #0f0; padding: 12px; height: 360px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h2>Passenger Ride Test</h2>
+
+  <fieldset>
+    <legend>Connection</legend>
+    <label for="socketUrl">Socket URL</label>
+    <input id="socketUrl" value="http://localhost:4022" />
+    <div>
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn">Disconnect</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Ride Context</legend>
+    <label for="rideId">Ride ID</label>
+    <input id="rideId" value="ride-123" />
+    <div>
+      <button id="subscribeBtn">Subscribe (join room)</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Cancellation</legend>
+    <label for="reason">Reason (optional)</label>
+    <input id="reason" />
+    <div>
+      <button id="cancelBtn">Passenger Cancel Ride</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Logs</legend>
+    <div id="log"></div>
+  </fieldset>
+
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <script>
+    let socket;
+
+    function log(...args) {
+      const el = document.getElementById('log');
+      const line = document.createElement('div');
+      line.textContent = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+      console.log(...args);
+    }
+
+    function getCtx() {
+      return {
+        url: document.getElementById('socketUrl').value.trim(),
+        rideId: document.getElementById('rideId').value.trim(),
+        reason: document.getElementById('reason').value.trim(),
+      };
+    }
+
+    function wireListeners() {
+      socket.on('connect', () => log('connected', socket.id));
+      socket.on('disconnect', () => log('disconnected'));
+
+      // Unified stream
+      socket.on('rideStream', (evt) => {
+        log('rideStream ←', evt);
+        const { rideId } = getCtx();
+        if (evt.rideId !== rideId) return;
+        switch (evt.type) {
+          case 'location':
+            // evt.data = { driverId, lat, lng, encodedPolyline? }
+            break;
+          case 'fare':
+            // evt.data = { totalDistance, totalTime, currentFare, status? }
+            break;
+          case 'status':
+            // evt.data = { status, reason? }
+            break;
+          case 'cancellation':
+            // evt.data = { by, reason? }
+            break;
+        }
+      });
+
+      // Legacy listeners (optional, for validation)
+      socket.on('locationUpdateFromDriver', (d) => log('locationUpdateFromDriver ←', d));
+      socket.on('rideStatusUpdate', (d) => log('rideStatusUpdate ←', d));
+      socket.on('liveFareUpdate', (d) => log('liveFareUpdate ←', d));
+    }
+
+    document.getElementById('connectBtn').onclick = () => {
+      const { url } = getCtx();
+      socket = io(url, { transports: ['websocket'] });
+      wireListeners();
+    };
+
+    document.getElementById('disconnectBtn').onclick = () => {
+      if (socket) socket.disconnect();
+    };
+
+    document.getElementById('subscribeBtn').onclick = () => {
+      const { rideId } = getCtx();
+      socket.emit('subscribe', { rideId });
+      log('subscribe →', { rideId });
+    };
+
+    document.getElementById('cancelBtn').onclick = () => {
+      const { rideId, reason } = getCtx();
+      socket.emit('passengerCanceledRide', { rideId, reason });
+      log('passengerCanceledRide →', { rideId, reason });
+    };
+  </script>
+</body>
+</html>
+
+

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Driver Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+  <style>
+    body{
+      margin:0;padding:24px;font-family:system-ui;
+      background:#0f172a;color:#e5e7eb;
+    }
+    .card{
+      background:#0b1220;padding:20px;border-radius:14px;
+      max-width:900px;margin:auto;
+    }
+    .status{
+      padding:8px 14px;border-radius:999px;
+      margin-bottom:14px;display:inline-block;
+    }
+    .success{background:#052e1a;color:#86efac;}
+    .warn{background:#2a1005;color:#fde68a;}
+    .error{background:#2a0b0b;color:#fecaca;}
+
+    .row{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
+    input,select{
+      padding:10px;border-radius:10px;border:none;outline:none;
+      flex:1;
+    }
+    button{
+      padding:10px 16px;border-radius:10px;border:none;
+      cursor:pointer;font-weight:600;
+    }
+    .btn-primary{background:#2563eb;color:white;}
+    .btn-danger{background:#dc2626;color:white;}
+
+    .grid{
+      display:grid;grid-template-columns:1fr 1fr;
+      gap:12px;margin-top:14px;
+    }
+    .stat{
+      background:#02061780;padding:12px;border-radius:10px;
+    }
+    .label{font-size:12px;color:#9ca3af;}
+    .value{font-size:16px;margin-top:6px;}
+  </style>
+</head>
+
+<body>
+<div class="card">
+  <h2>🚗 Driver Panel</h2>
+
+  <!-- Ride ID -->
+  <div class="row">
+    <input id="rideInput" placeholder="Enter Ride ID">
+    <button id="subscribeBtn" class="btn-primary">Subscribe</button>
+  </div>
+
+  <div id="status" class="status warn">Not subscribed</div>
+
+  <!-- Controls -->
+  <div class="row">
+    <button id="sendOnce" class="btn-primary">Send Location Once</button>
+
+    <select id="intervalSelect">
+      <option value="">Select interval</option>
+      <option value="3000">Every 3 sec</option>
+      <option value="5000">Every 5 sec</option>
+      <option value="10000">Every 10 sec</option>
+    </select>
+
+    <button id="startAuto" class="btn-primary">Start Auto</button>
+    <button id="stopAuto" class="btn-danger">Stop Auto</button>
+  </div>
+
+  <div class="row">
+    <button id="cancelRide" class="btn-danger">Cancel Ride</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid">
+    <div class="stat"><div class="label">Latitude</div><div id="lat" class="value">-</div></div>
+    <div class="stat"><div class="label">Longitude</div><div id="lng" class="value">-</div></div>
+    <div class="stat"><div class="label">Time</div><div id="time" class="value">-</div></div>
+    <div class="stat"><div class="label">Counter</div><div id="counter" class="value">0</div></div>
+  </div>
+</div>
+
+<script>
+/* SOCKET */
+const socket = io("http://localhost:4022",{transports:["websocket"]});
+
+/* STATE */
+let currentRideId = null;
+let autoInterval = null;
+let counter = 0;
+let lat = 9.5754717;
+let lng = -13.6198829;
+
+/* DRIVER INFO */
+const driverInfo = {
+  first_name:"mahesh",
+  last_name:"more",
+  phone:919022281011,
+  vehicle_type:"sedan",
+  brand:"Toyota",
+  model:"Etios",
+  color:"White",
+  vehicle_number:"MH20PRE004",
+  manufacturing_year:2021,
+  capacity:4
+};
+
+const encodedPolyline="atsmDezfvMBgAT?d@?xBFtB@V?TFLc@nAgC\\y@~@qBfA}B...";
+
+/* ELEMENTS */
+const statusEl=document.getElementById("status");
+const rideInput=document.getElementById("rideInput");
+const latEl=document.getElementById("lat");
+const lngEl=document.getElementById("lng");
+const timeEl=document.getElementById("time");
+const counterEl=document.getElementById("counter");
+
+/* HELPERS */
+function setStatus(text,type="warn"){
+  statusEl.textContent=text;
+  statusEl.className="status "+type;
+}
+
+function stopAuto(){
+  if(autoInterval){
+    clearInterval(autoInterval);
+    autoInterval=null;
+  }
+}
+
+/* SUBSCRIBE */
+document.getElementById("subscribeBtn").onclick=()=>{
+  const rideId=rideInput.value.trim();
+  if(!rideId){
+    setStatus("Enter Ride ID","warn");return;
+  }
+  if(currentRideId){
+    socket.emit("unsubscribe",{rideId:currentRideId});
+  }
+  currentRideId=rideId;
+  socket.emit("subscribe",{rideId});
+  setStatus("Subscribed to "+rideId,"success");
+};
+
+/* SEND LOCATION FUNCTION */
+function emitLocation(){
+  if(!currentRideId){
+    setStatus("Subscribe first","warn");return;
+  }
+
+  counter++;
+  lat+=Math.random()*0.001;
+  lng+=Math.random()*0.001;
+
+  const payload={
+    driverId:"driver123",
+    rideId:currentRideId,
+    lat,lng,
+    encodedPolyline,
+    timestamp:new Date().toISOString(),
+    counter,
+    driverInfo
+  };
+
+  socket.emit("locationUpdateFromDriver",payload);
+
+  latEl.textContent=lat.toFixed(6);
+  lngEl.textContent=lng.toFixed(6);
+  timeEl.textContent=new Date(payload.timestamp).toLocaleTimeString();
+  counterEl.textContent=counter;
+}
+
+/* MANUAL SEND */
+document.getElementById("sendOnce").onclick=emitLocation;
+
+/* START AUTO */
+document.getElementById("startAuto").onclick=()=>{
+  const interval=document.getElementById("intervalSelect").value;
+  if(!interval){
+    setStatus("Select interval","warn");return;
+  }
+  stopAuto();
+  autoInterval=setInterval(emitLocation,Number(interval));
+  setStatus("Auto started ("+interval/1000+"s)","success");
+};
+
+/* STOP AUTO */
+document.getElementById("stopAuto").onclick=()=>{
+  stopAuto();
+  setStatus("Auto stopped","warn");
+};
+
+/* CANCEL RIDE */
+document.getElementById("cancelRide").onclick=()=>{
+  if(!currentRideId)return;
+  stopAuto();
+  socket.emit("driverCanceledRide",{
+    rideId:currentRideId,
+    reason:"Driver canceled"
+  });
+  setStatus("Ride canceled","error");
+};
+
+/* DISCONNECT */
+socket.on("disconnect",()=>{
+  stopAuto();
+  setStatus("Disconnected","error");
+});
+</script>
+</body>
+</html>

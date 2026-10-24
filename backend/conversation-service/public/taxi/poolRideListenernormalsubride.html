@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Pool Ride Listener</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;background:#f4f4f4;padding:18px}
+  .card{max-width:900px;margin:18px auto;background:#fff;padding:18px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+  h1{margin:0 0 12px 0;font-size:20px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .input{padding:8px;border:1px solid #ddd;border-radius:4px}
+  button{padding:8px 12px;background:#007bff;color:#fff;border:none;border-radius:6px;cursor:pointer}
+  button:hover{background:#0056b3}
+  .live{background:#e9ffe9;padding:12px;border-radius:6px;color:#1b6f3a;font-weight:600}
+  .logs{background:#fafafa;padding:10px;border-radius:6px;border:1px solid #eee;max-height:320px;overflow:auto;margin-top:12px}
+  .small{font-size:13px;color:#666}
+  ul{margin:6px 0 0 18px}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Pool Ride Live Listener</h1>
+
+    <div style="margin-bottom:10px">
+      <div class="row">
+        <label class="small">Pool Ride ID: <input id="poolRideId" class="input" value="pool-ride-001" /></label>
+        <button onclick="joinRoom()">Join</button>
+        <button onclick="leaveRoom()">Leave</button>
+        <button onclick="clearLogs()">Clear Logs</button>
+      </div>
+      <div class="small" style="margin-top:6px">Connects to Socket.IO and listens for <code>poolRideCoordinateUpdate</code> broadcasts.</div>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:320px">
+        <div class="small">Latest update</div>
+        <div id="live" class="live">No updates yet</div>
+      </div>
+
+      <div style="width:340px;min-width:260px">
+        <div class="small">Passengers (latest statuses)</div>
+        <div id="passengerList" style="background:#fff;padding:10px;border-radius:6px;border:1px solid #eee;min-height:72px"></div>
+      </div>
+    </div>
+
+    <div class="logs" id="logs"></div>
+  </div>
+
+<script>
+  // change URL if your socket server runs elsewhere
+  const SOCKET_URL = 'http://localhost:4022';
+  const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+
+  let currentRoom = null;
+
+  socket.on('connect', () => log(`✅ connected to ${SOCKET_URL} (socket id: ${socket.id})`));
+  socket.on('disconnect', () => log('🔌 disconnected from server'));
+
+  // Listen for pool ride broadcasts (the server publishes to room with this event)
+  socket.on('poolRideCoordinateUpdate', (data) => {
+    log('📍 poolRideCoordinateUpdate received');
+    showLive(data);
+  });
+
+  // Also listen for unified rideStream (optional if your server emits this)
+  socket.on('rideStream', (ev) => {
+    if (ev && ev.type === 'pool-coordinates' && ev.data) {
+      // you can use this if server pushes rideStream too
+      // showLive(ev.data);
+    }
+  });
+
+  function joinRoom(){
+    const poolRideId = document.getElementById('poolRideId').value.trim();
+    if (!poolRideId) return alert('Enter poolRideId');
+    socket.emit('subscribe', { rideId: poolRideId }); // your server uses subscribe({rideId})
+    // some setups use joinPoolRide, adjust if needed:
+    // socket.emit('joinPoolRide', poolRideId);
+    currentRoom = poolRideId;
+    log(`📥 subscribed to room: ${poolRideId}`);
+  }
+
+  function leaveRoom(){
+    if (!currentRoom) return log('⚠ Not in any room');
+    // Using Socket.IO server side, leave by sending an event or using socket.leave on server.
+    // We'll emit an unsubscribe event if your server supports it; otherwise just stop listening.
+    socket.emit('unsubscribe', { rideId: currentRoom });
+    log(`📤 requested unsubscribe from room: ${currentRoom}`);
+    currentRoom = null;
+    document.getElementById('live').innerText = 'No updates (left room)';
+    document.getElementById('passengerList').innerHTML = '';
+  }
+
+  function showLive(data){
+    // Data shape expected:
+    // { poolRideId, driverId, coordinates: {lat,lng}, timestamp, passengers: [{passengerId,status,...}] }
+    if (!data) return;
+    const live = document.getElementById('live');
+    const lat = data.coordinates?.lat ?? '—';
+    const lng = data.coordinates?.lng ?? '—';
+    const ts = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+
+    live.innerHTML = `<div><strong>Ride:</strong> ${data.poolRideId || '-'} &nbsp; <strong>Driver:</strong> ${data.driverId || '-'}</div>
+                      <div style="margin-top:6px"><strong>Coord:</strong> ${lat}, ${lng} &nbsp; <span class="small">(${ts})</span></div>`;
+
+    // passengers list
+    const pEl = document.getElementById('passengerList');
+    pEl.innerHTML = '';
+    if (Array.isArray(data.passengers) && data.passengers.length){
+      const ul = document.createElement('ul');
+      data.passengers.forEach(p => {
+        const li = document.createElement('li');
+        li.innerHTML = `${p.passengerId || '-'} → <strong>${p.status || '-'}</strong>`;
+        ul.appendChild(li);
+      });
+      pEl.appendChild(ul);
+    } else {
+      pEl.innerText = 'No passenger data in update';
+    }
+  }
+
+  function log(msg){
+    const el = document.getElementById('logs');
+    const time = new Date().toLocaleTimeString();
+    el.innerHTML = `<div style="margin-bottom:6px"><small style="color:#666">${time}</small> — ${escapeHtml(String(msg))}</div>` + el.innerHTML;
+  }
+
+  function clearLogs(){
+    document.getElementById('logs').innerHTML = '';
+  }
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // handy: show initial connection state
+  log('Ready — enter a poolRideId and join to receive updates.');
+</script>
+</body>
+</html>

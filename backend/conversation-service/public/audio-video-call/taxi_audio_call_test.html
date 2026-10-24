@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Audio Call Demo</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+
+<body>
+  <h1>🎤 Audio Call Demo</h1>
+
+  <label>Your ID: <input id="myId" placeholder="e.g. 919836834245" /></label><br><br>
+  <label>Call To: <input id="targetId" placeholder="e.g. 919831624339" /></label><br><br>
+
+  <button id="registerBtn">Register</button>
+  <button id="callBtn">Call</button>
+  <button id="pickBtn" disabled>Pick Call</button>
+  <button id="endBtn">End Call</button>
+
+  <pre id="logs"></pre>
+
+  <audio id="remoteAudio" autoplay></audio>
+
+  <script>
+    // const socket = io("http://localhost:4022", {
+      const socket = io("http://89.116.121.48:4022", {
+      transports: ["websocket"],
+      auth: { token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImFjY2Vzcy1rZXktMSJ9.eyJzdWIiOiI2OGM4MjA5YTdmMTNmZjAzMTk4Y2ZhOTYiLCJfaWQiOiI2OGM4MjA5YTdmMTNmZjAzMTk4Y2ZhOTYiLCJyb2xlIjoiaW5kaXZpZHVhbCIsImVtYWlsIjoiYW5pc2hzQHNkbGNjb3JwLmNvbSIsInBob25lIjo5MTk4MzE2MjQzMzksIndhbGxldF9pZCI6IjkxOTgzMTYyNDMzOUB3Y29uIiwiYXBwX2NvZGUiOiJTUF9NQUlOIiwiaWF0IjoxNzcxNzY5NDQ4LCJleHAiOjE3NzE4NTU4NDgsImlzcyI6ImF1dGguc3VwZXJhcHAifQ.YG6GgcM-LBTExf6F-JXKxFm90K3F-AqhkBdBHT1Yo7wukBOkI7OnkcYC-K3muM2oMAsJAwdbbkWuEoX41XBRbuB2xijUZ8jM7-my0C53KGHSwtGIhHHQi9bi_aNEXxLaqt-Fp5M3Vb52YfXUKAUelvgGgiyCp9E7HZiMcMwEX2CRyD6Hn3AuDmjMX_bHoPLagkI_i3aSHYUhGYS2fqJSgSfP7zNi5_ilMiSyC3elqDJUpkFZAKgCDPP1j1W1JnCy3Vvvl1k4enR9E51T5nop_PJFckB-y2eM1qMDTUM3GYZr-sU8u9BgMMgrEdKIPDYNJMc2eXZohdc_2jCHHziueA" },
+    });
+    const logEl = document.getElementById("logs");
+    const myIdEl = document.getElementById("myId");
+    const targetIdEl = document.getElementById("targetId");
+    const remoteAudio = document.getElementById("remoteAudio");
+
+    let localStream;
+    let peerConnection;
+    let currentCallId;
+    let pendingOffer = null;
+    let pendingFrom = null;
+
+    function log(msg) {
+      console.log(msg);
+      logEl.textContent += msg + "\n";
+    }
+
+    // Register user
+    document.getElementById("registerBtn").onclick = async () => {
+      const myId = myIdEl.value.trim();
+      if (!myId) return alert("Enter your ID first");
+      socket.emit("taxi:registerUser", { username: myId });
+      log("Registered as " + myId);
+
+      // Get microphone permission
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      log("Microphone ready");
+    };
+
+    // Create peer connection
+    function createPeerConnection(to) {
+      peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          {
+            urls: [
+              "turn:89.116.121.48:3478?transport=udp",
+              "turn:89.116.121.48:3478?transport=tcp",
+              "turns:89.116.121.48:5349?transport=tcp"
+            ],
+            username: "sdlccorp@superapp@eventserverturn",
+            credential: "superappturn1a9k9s7.@sdlccorp.@docker"
+          }
+        ]
+      });
+
+      // Add microphone track
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      // Play remote audio
+      peerConnection.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+      };
+
+      // Send ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("taxiCall:ice-candidate", {
+            callId: currentCallId,
+            from: myIdEl.value,
+            to,
+            candidate: event.candidate,
+          });
+        }
+      };
+
+      return peerConnection;
+    }
+
+    // Start call
+    document.getElementById("callBtn").onclick = async () => {
+      const from = myIdEl.value.trim();
+      const to = targetIdEl.value.trim();
+      if (!from || !to) return alert("Enter both IDs");
+
+      createPeerConnection(to);
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      socket.emit("taxiCall:offer", { from, to, offer, bookingId: "NGBA6JMA3P" });
+      log("Calling " + to);
+    };
+
+    // Pick Call button
+    document.getElementById("pickBtn").onclick = async () => {
+      if (!pendingOffer || !pendingFrom) return;
+
+      log("Picking call from " + pendingFrom);
+      currentCallId = pendingOffer.callId;
+
+      createPeerConnection(pendingFrom);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingOffer.offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+
+      socket.emit("taxiCall:stopTimer", {
+        callId: currentCallId,
+      });
+
+      socket.emit("taxiCall:answer", {
+        from: myIdEl.value,
+        to: pendingFrom,
+        answer,
+      });
+
+      socket.emit("taxiCall:connect", {
+        from: myIdEl.value,
+        to: pendingFrom,
+        callId: currentCallId,
+      });
+
+      log("Call picked with " + pendingFrom);
+      document.getElementById("pickBtn").disabled = true;
+      pendingOffer = null;
+      pendingFrom = null;
+    };
+
+    // End call
+    document.getElementById("endBtn").onclick = () => {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      socket.emit("taxiCall:end", { callId: currentCallId, from: myIdEl.value, to: targetIdEl.value, conversationId: "68c9271100daf7ba1ae4eb4a" });
+      log("Call ended");
+    };
+
+    // Incoming call
+    socket.on("taxiCall:incoming", ({ callId, from, offer }) => {
+      log("Incoming call from " + from);
+      pendingOffer = { callId, offer };
+      pendingFrom = from;
+      document.getElementById("pickBtn").disabled = false; // enable pick button
+    });
+
+    // Handle answer
+    socket.on("taxiCall:answer", async ({ from, answer }) => {
+      log("Got answer from " + from);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    // Handle ICE candidates
+    socket.on("taxiCall:ice-candidate", async ({ candidate }) => {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.error("Error adding ICE candidate", e);
+      }
+    });
+
+    // Call ended
+    socket.on("taxiCall:ended", ({ from }) => {
+      log("Call ended by " + from);
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+    });
+  </script>
+</body>
+
+</html>

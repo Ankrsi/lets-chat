@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sequential Ride Dispatch — Driver Test</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e9ef;
+    --muted: #8b93a7; --accent: #4c8dff; --ok: #34c759; --warn: #ff9f0a; --err: #ff453a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .pill {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted);
+  }
+  .pill.on { color: var(--ok); border-color: var(--ok); }
+  .pill.off { color: var(--err); border-color: var(--err); }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, textarea {
+    width: 100%; padding: 8px 10px; border-radius: 7px; color: var(--text);
+    background: #0e1016; border: 1px solid var(--line); font-family: inherit; font-size: 13px;
+  }
+  textarea { resize: vertical; min-height: 64px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  button {
+    padding: 8px 14px; border-radius: 7px; border: 1px solid var(--line);
+    background: #1e2330; color: var(--text); cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger  { background: #3a1d1d; border-color: #5c2b2b; color: #ff8a80; }
+  button.ok      { background: #16351f; border-color: #245c33; color: #7ee29a; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+  #request { display: none; margin-top: 12px; border: 1px solid var(--accent); border-radius: 9px; padding: 12px; background: #101827; }
+  #request.show { display: block; }
+  #request .rid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--accent); }
+  #request .fields { margin: 8px 0; font-size: 13px; }
+  #request .fields div { padding: 2px 0; }
+  #request .fields span { color: var(--muted); display: inline-block; min-width: 96px; }
+  #countdown { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #countdown.low { color: var(--warn); }
+
+  #log { height: 62vh; overflow: auto; margin: 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  .line { padding: 4px 8px; border-bottom: 1px solid #1d212b; white-space: pre-wrap; word-break: break-word; }
+  .t { display: inline-block; min-width: 84px; color: var(--muted); }
+  .tag { display: inline-block; min-width: 46px; font-weight: 700; }
+  .t-in  .tag { color: var(--accent); }
+  .t-out .tag { color: var(--warn); }
+  .t-evt .tag { color: var(--ok); }
+  .t-err .tag { color: var(--err); }
+  .t-sys .tag { color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  #queuePos { font-size: 12px; color: var(--muted); margin: 6px 0; }
+  .warnbox { display: block; color: var(--warn); border: 1px solid var(--warn); border-radius: 6px; padding: 7px 9px; line-height: 1.45; }
+  code { background: #0e1016; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚕 Sequential Ride Dispatch — Driver Test</h1>
+  <span class="pill" id="status">disconnected</span>
+  <span class="pill" id="sid">—</span>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Connection</h2>
+
+    <label>Socket server URL</label>
+    <input id="url" value="http://localhost:4021" />
+
+    <label>Driver JWT (same token the driver app uses)</label>
+    <textarea id="token" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
+
+    <div class="row">
+      <button id="connectBtn" class="primary">Connect</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+    <div class="row">
+      <button id="subBtn" disabled>subscribe-requests</button>
+      <button id="unsubBtn" disabled>unsubscribe</button>
+      <button id="clearBtn">Clear log</button>
+    </div>
+
+    <div id="request">
+      <div class="rid" id="reqRideId">—</div>
+      <div id="queuePos"></div>
+      <div class="fields" id="reqFields"></div>
+      <div>Auto-expires in <span id="countdown">—</span>s</div>
+      <div class="row">
+        <button id="declineBtn" class="danger">Decline → next driver now</button>
+        <button id="ackBtn">Send ack</button>
+      </div>
+    </div>
+
+    <p class="hint">
+      Open this page in <strong>two or three browser windows</strong>, each with a
+      different driver's token, then create a ride. Only ONE window gets
+      <code>ride:new-request</code>. Hit <strong>Decline</strong> and the next
+      window should light up within about a second, instead of after the full
+      window shown in the countdown.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Event log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let socket = null;
+  let currentRideId = null;
+  let timer = null;
+
+  const stamp = () => new Date().toLocaleTimeString('en-GB', { hour12: false }) +
+    '.' + String(new Date().getMilliseconds()).padStart(3, '0');
+
+  function log(tag, cls, msg, data) {
+    const el = document.createElement('div');
+    el.className = 'line ' + cls;
+    el.innerHTML = '<span class="t">' + stamp() + '</span>' +
+                   '<span class="tag">' + tag + '</span> ' + msg +
+                   (data !== undefined ? '\n' + JSON.stringify(data, null, 2) : '');
+    $('log').prepend(el);
+  }
+
+  function setConnected(on, id) {
+    $('status').textContent = on ? 'connected' : 'disconnected';
+    $('status').className = 'pill ' + (on ? 'on' : 'off');
+    $('sid').textContent = id || '—';
+    $('connectBtn').disabled = on;
+    ['disconnectBtn', 'subBtn', 'unsubBtn'].forEach(b => $(b).disabled = !on);
+  }
+
+  function clearRequest(why) {
+    if (timer) { clearInterval(timer); timer = null; }
+    currentRideId = null;
+    $('request').classList.remove('show');
+    if (why) log('SYS', 't-sys', 'Request card cleared: ' + why);
+  }
+
+  function showRequest(data) {
+    // Packages run through the same dispatch chain and carry packageId instead
+    currentRideId = data.rideId || data.packageId || data.ride_id;
+    const kind = data.type === 'package_request' ? '📦 PACKAGE'
+               : data.type === 'pool_ride_request' ? '🚐 POOL'
+               : '🚕 RIDE';
+    $('reqRideId').textContent = kind + (data.replay === 'true' ? '  ·  REPLAY' : '') +
+                                 '  ·  ' + currentRideId;
+
+    // How many drivers this ride can fall through to. "1 of 1" means declining
+    // ends the search here — the shortlist was the limit, not the dispatch chain.
+    const pos = Number(data.queuePosition) || 0;
+    const size = Number(data.queueSize) || 0;
+    if (pos && size) {
+      $('queuePos').innerHTML = size === 1
+        ? '<span class="warnbox">⚠️ Driver 1 of 1 — no other driver to fall through to. ' +
+          'Declining will end the search. Check the server log line “only ONE driver survived filtering”.</span>'
+        : 'Driver <strong>' + pos + '</strong> of <strong>' + size + '</strong> in the queue';
+    } else {
+      $('queuePos').textContent = '';
+    }
+
+    const show = ['pickup', 'destination', 'fare', 'riderFullName', 'app_code',
+                  'current_mode', 'type', 'parcel_type', 'sender_name', 'receiver_name'];
+    $('reqFields').innerHTML = show
+      .filter(k => data[k] !== undefined && data[k] !== '')
+      .map(k => '<div><span>' + k + '</span>' + data[k] + '</div>')
+      .join('');
+
+    $('request').classList.add('show');
+
+    // The server sends its own window, so this can never drift from the backend
+    let left = Number(data.offerTimeoutSeconds) || 60;
+    $('countdown').textContent = left;
+    $('countdown').classList.remove('low');
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => {
+      left -= 1;
+      $('countdown').textContent = Math.max(0, left);
+      if (left <= 10) $('countdown').classList.add('low');
+      if (left <= 0) { clearInterval(timer); timer = null; }
+    }, 1000);
+  }
+
+  $('connectBtn').onclick = () => {
+    const url = $('url').value.trim();
+    const token = $('token').value.trim();
+    if (!token) return log('ERR', 't-err', 'Paste a driver JWT first');
+
+    log('SYS', 't-sys', 'Connecting to ' + url + ' …');
+    socket = io(url, {
+      transports: ['websocket', 'polling'],
+      auth: { token },
+      query: { token }, // server accepts either
+    });
+
+    socket.on('connect', () => {
+      setConnected(true, socket.id);
+      log('SYS', 't-sys', 'Connected — subscribing to ride requests');
+      socket.emit('ride:subscribe-requests');
+    });
+
+    socket.on('disconnect', (r) => { setConnected(false); clearRequest(); log('SYS', 't-sys', 'Disconnected: ' + r); });
+    socket.on('connect_error', (e) => log('ERR', 't-err', 'connect_error: ' + e.message));
+
+    // ---- This driver has been offered the ride (his turn) ----
+    socket.on('ride:new-request', (data) => {
+      // replay = the app was closed when his turn began, and he reconnected
+      // while it was still running
+      log('EVT', 't-evt',
+        data.replay === 'true'
+          ? '⬇ ride:new-request — REPLAYED (missed while offline, turn still running)'
+          : '⬇ ride:new-request — MY TURN',
+        data);
+      showRequest(data);
+      const rideId = data.rideId || data.packageId || data.ride_id;
+      socket.emit('ride:request-ack', { rideId });
+      log('OUT', 't-out', 'emit → ride:request-ack (telemetry only)', { rideId });
+    });
+
+    // ---- The offer is no longer his ----
+    socket.on('ride:request-closed', (data) => {
+      log('EVT', 't-evt', '⬇ ride:request-closed', data);
+      if (!currentRideId || data.rideId === currentRideId) {
+        clearRequest(data.reason);
+      }
+    });
+
+    // The ack now carries what the server actually did with the decline
+    socket.on('ride:decline-ack', (d) => {
+      const explain = {
+        offered:       '✅ passed to the NEXT driver — his window should be open now',
+        exhausted:     'ℹ️ that was the last driver — search stopped, nobody is asked again. Auto-cancel will close the ride.',
+        ride_closed:   'ℹ️ ride was already accepted or cancelled',
+        no_queue:      '⚠️ no dispatch queue found for this ride (already finished or expired)',
+        stale_decline: '⚠️ REJECTED — you are not the driver currently holding this offer',
+        duplicate:     'ℹ️ duplicate decline, ignored',
+        not_configured:'❌ RIDING_SERVICE_BASE_URL is not set in conversation-service',
+        error:         '❌ riding-service call failed — see conversation-service logs',
+      }[d?.outcome] || ('outcome: ' + d?.outcome);
+
+      log('IN', 't-in', '⬇ ride:decline-ack — ' + explain, d);
+    });
+    socket.on('ride:subscribed-requests', (d) => log('IN', 't-in', 'ride:subscribed-requests', d));
+    socket.on('ride:unsubscribed-requests', (d) => log('IN', 't-in', 'ride:unsubscribed-requests', d));
+
+    socket.onAny((event, ...args) => {
+      if (event.startsWith('ride:')) return; // handled above
+      log('IN', 't-in', event, args.length === 1 ? args[0] : args);
+    });
+  };
+
+  $('disconnectBtn').onclick = () => socket && socket.disconnect();
+  $('subBtn').onclick   = () => { socket?.emit('ride:subscribe-requests');   log('OUT', 't-out', 'emit → ride:subscribe-requests'); };
+  $('unsubBtn').onclick = () => { socket?.emit('ride:unsubscribe-requests'); log('OUT', 't-out', 'emit → ride:unsubscribe-requests'); };
+  $('clearBtn').onclick = () => { $('log').innerHTML = ''; };
+
+  $('ackBtn').onclick = () => {
+    if (!currentRideId) return;
+    socket?.emit('ride:request-ack', { rideId: currentRideId });
+    log('OUT', 't-out', 'emit → ride:request-ack', { rideId: currentRideId });
+  };
+
+  // The point of this page: decline and the ride moves on immediately
+  $('declineBtn').onclick = () => {
+    if (!currentRideId) return;
+    const rideId = currentRideId;
+    socket?.emit('ride:decline', { rideId });
+    log('OUT', 't-out', 'emit → ride:decline — next driver should be offered within ~1s', { rideId });
+    clearRequest('declined by me');
+  };
+</script>
+</body>
+</html>

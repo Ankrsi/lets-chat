@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Passenger Pool Ride Tester</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { background:#15182b; color:#fff; font-family: Inter, Arial, sans-serif; margin: 0; padding: 0; }
+    .container { max-width: 750px; margin:32px auto; background:#222645; border-radius:13px; padding:22px; box-shadow:0 6px 18px #0002; }
+    h1 { font-size:23px; margin-bottom:10px; }
+    label,input,button { display:block; margin-bottom:8px; font-size:16px; }
+    input,button { padding: 8px 12px; border-radius:8px; border:none; }
+    input[type=text],input[type=number] { width:100%; }
+    #map { height:300px; margin-bottom:16px; border-radius:12px; }
+    .row { display:flex; gap:14px; }
+    .row > div { flex:1; }
+    button { background:#327ce3; color:#fff; cursor:pointer; margin-top: 4px; }
+    button:disabled { opacity: .5; }
+    .status { padding:6px 10px; background:#181c32; border-radius:6px; margin-top:0; color:#aad4ff; font-size:15px; }
+    .log { max-height: 130px; white-space: pre-line; background: #111526; padding:9px; border-radius: 8px; margin-top:7px; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Passenger Pool Ride Tester</h1>
+    <form id="passengerForm">
+      <div class="row">
+        <div><label>Backend Socket URL</label><input id="socketUrl" value="http://localhost:4022" /></div>
+        <div><label>Ride ID</label><input id="rideId" placeholder="POOLRIDE123" required /></div>
+      </div>
+      <button type="submit">Connect & Subscribe</button>
+    </form>
+    <div id="map"></div>
+    <div class="status" id="subStatus">Disconnected</div>
+    <div class="log" id="eventLog"></div>
+  </div>
+  <script>
+    let socket, driverMarker, path, lastPolyline = '', map = null;
+    const L = window.L;
+    function log(msg) {
+      const el = document.getElementById('eventLog');
+      el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+    function setStatus(txt) { document.getElementById('subStatus').textContent = txt; }
+    function decodePolyline(str) {
+      let points = [];
+      let index = 0, lat = 0, lng = 0;
+      while (index < str.length) {
+        let b, shift = 0, result = 0;
+        do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+        let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lat += dlat;
+        shift = 0; result = 0;
+        do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+        let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lng += dlng;
+        points.push([lat * 1e-5, lng * 1e-5]);
+      }
+      return points;
+    }
+    function clearRoute() {
+      if (path) { map.removeLayer(path); path = null; }
+      if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
+    }
+    // Setup map right away
+    map = L.map('map').setView([19.076, 72.8777], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OSM contributors'
+    }).addTo(map);
+    document.getElementById('passengerForm').onsubmit = function(e) {
+      e.preventDefault();
+      const url = document.getElementById('socketUrl').value.trim();
+      const rideId = document.getElementById('rideId').value.trim();
+      if (!url || !rideId) { setStatus('Missing URL or RideId'); return; }
+      setStatus('Connecting...');
+      log('Connecting Socket...');
+      if (socket && socket.connected) socket.disconnect();
+      if (driverMarker) map.removeLayer(driverMarker);
+      if (path) map.removeLayer(path);
+      socket = io(url, { transports: ['websocket'], autoConnect: true });
+      socket.on('connect', () => {
+        setStatus('Connected. Subscribing...');
+        log('Socket connected. Subscribing to rideID ' + rideId);
+        socket.emit('subscribe', { rideId });
+        setStatus('Subscribed. Waiting for location events...');
+      });
+      socket.on('disconnect', () => setStatus('Disconnected'));
+      socket.on('rideStream', (evt) => {
+        if (evt.rideId !== rideId) return;
+        if (evt.type === 'location' && evt.data && typeof evt.data.lat === 'number' && typeof evt.data.lng === 'number') {
+          showDriver(evt.data, evt.data.encodedPolyline || '');
+          setStatus('Driver update received');
+          log(`Driver moved to: ${evt.data.lat.toFixed(5)},${evt.data.lng.toFixed(5)}`);
+        }
+      });
+      // Some setups may also get events just as 'location'
+      socket.on('location', (data) => {
+        if (data.rideId !== rideId) return;
+        showDriver(data, data.encodedPolyline || '');
+        setStatus('Driver update received');
+        log(`[legacy] Driver: ${data.lat.toFixed(5)},${data.lng.toFixed(5)}`);
+      });
+    }
+    function showDriver(data, encodedPolyline) {
+      if (!data.lat || !data.lng) return;
+      if (!driverMarker) driverMarker = L.marker([data.lat, data.lng]).addTo(map);
+      else driverMarker.setLatLng([data.lat, data.lng]);
+      // Only plot polyline if newly seen or changed
+      if (encodedPolyline && encodedPolyline !== lastPolyline) {
+        if (path) map.removeLayer(path);
+        const polyPoints = decodePolyline(encodedPolyline);
+        path = L.polyline(polyPoints, {color:'deepskyblue',weight:5}).addTo(map);
+        map.fitBounds(path.getBounds(), {padding:[20,20]});
+        lastPolyline = encodedPolyline;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Driver Transaction Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: linear-gradient(to bottom right, #111827, #1f2937, #000);
+      color: #f3f4f6;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    h2 {
+      font-size: 24px;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+
+    .status-box {
+      width: 360px;
+      padding: 20px;
+      border-radius: 12px;
+      background-color: #1f2937;
+      border: 1px solid #374151;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .connected {
+      color: #4ade80;
+    }
+
+    .disconnected {
+      color: #f87171;
+    }
+
+    .success {
+      color: #4ade80;
+    }
+
+    .error {
+      color: #f87171;
+    }
+
+    .message {
+      color: #f3f4f6;
+      font-size: 14px;
+      word-break: break-word;
+    }
+
+    .event-log {
+      max-height: 400px;
+      overflow-y: auto;
+      background-color: #111827;
+      padding: 10px;
+      width: 90%;
+      border-radius: 10px;
+      font-size: 14px;
+      border: 1px solid #374151;
+      text-align: left;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      color: #f3f4f6;
+    }
+
+    th,
+    td {
+      padding: 8px;
+      text-align: center;
+      border-bottom: 1px solid #374151;
+    }
+
+    th {
+      background-color: #1f2937;
+      position: sticky;
+      top: 0;
+    }
+
+    tr.new {
+      background-color: rgba(74, 222, 128, 0.1);
+      animation: fadeout 3s forwards;
+    }
+
+    @keyframes fadeout {
+      0% {
+        background-color: rgba(74, 222, 128, 0.2);
+      }
+
+      100% {
+        background-color: transparent;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Driver Transaction Monitor</h2>
+
+  <div class="status-box">
+    <div>Connection: <span id="connStatus" class="disconnected">🔴 Disconnected</span></div>
+    <div>Last Transaction: <span id="txnStatus">None</span></div>
+    <div class="message" id="txnMessage">No transactions yet</div>
+  </div>
+
+  <div class="event-log">
+    <strong>Live Transactions</strong>
+    <table id="txnTable">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>User</th>
+          <th>Amount</th>
+          <th>Type</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="txnBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const SOCKET_URL = "http://localhost:4022";
+    const driverPhone = "919022281011";
+
+    const connStatusEl = document.getElementById("connStatus");
+    const txnStatusEl = document.getElementById("txnStatus");
+    const txnMessageEl = document.getElementById("txnMessage");
+    const txnBody = document.getElementById("txnBody");
+
+    const socket = io(SOCKET_URL, {
+      auth: { token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OGM5MDEyMWE0M2Y3Mzg2N2Y4YzQ3OTkiLCJyb2xlIjoidGF4aV9kcml2ZXIiLCJlbWFpbCI6Im1vcmVtYWhlc2g5OTMwQGdtYWlsLmNvbSIsInBob25lIjo5MTkwMjIyODEwMTEsImFwcF9jb2RlIjoiTkdfVEJBIiwiaWF0IjoxNzU5NTU4NDk1LCJleHAiOjE3NTk2NDQ4OTV9.xI6zlg_Hzg_Wz59VFy1x24CQnKBQFknkbRiBZDs_Lsw" },
+      transports: ["websocket"]
+    });
+
+    // Connection handlers
+    socket.on("connect", () => {
+      connStatusEl.textContent = "🟢 Connected";
+      connStatusEl.className = "connected";
+    });
+
+    socket.on("disconnect", () => {
+      connStatusEl.textContent = "🔴 Disconnected";
+      connStatusEl.className = "disconnected";
+    });
+
+    socket.on("connect_error", (err) => {
+      connStatusEl.textContent = "⚠️ Connection Error";
+      connStatusEl.className = "error";
+      txnMessageEl.textContent = err.message;
+      txnStatusEl.textContent = "Error";
+    });
+
+    // Helper to add rows
+    function addTransactionRow(data, statusClass) {
+      const row = document.createElement("tr");
+      row.classList.add("new");
+      row.innerHTML = `
+        <td>${new Date().toLocaleTimeString()}</td>
+        <td>${data.userPhone || "N/A"}</td>
+        <td>₹${data.amount || 0}</td>
+        <td>${data.transactionType || data.description || "-"}</td>
+        <td class="${statusClass}">${statusClass.toUpperCase()}</td>
+      `;
+      txnBody.prepend(row);
+      setTimeout(() => row.classList.remove("new"), 3000);
+    }
+
+    socket.on("transaction:update", (dataArray) => {
+      console.log("✅ Received transaction:update payload:", dataArray);
+
+      // Iterate over each txn in the array
+      dataArray.forEach((data) => {
+        const userPhone = data.userPhone || data.user_phone || "N/A";
+        const amount = data.amount || 0;
+        const type = data.transactionType || data.description || "-";
+        const status = data.status || "unknown";
+
+        txnStatusEl.textContent = "✅ Success";
+        txnStatusEl.className = "success";
+        txnMessageEl.textContent = `User: ${userPhone} | Amount: ₹${amount} | Type: ${type}`;
+
+        addTransactionRow({ userPhone, amount, transactionType: type }, "success");
+      });
+    });
+
+    socket.on("transaction:error", (dataArray) => {
+      console.log("❌ Received transaction:error payload:", dataArray);
+
+      dataArray.forEach((data) => {
+        const userPhone = data.userPhone || data.user_phone || "N/A";
+        const amount = data.amount || 0;
+        const type = data.transactionType || data.description || "-";
+
+        txnStatusEl.textContent = "❌ Failed";
+        txnStatusEl.className = "error";
+        txnMessageEl.textContent = `User: ${userPhone} | Amount: ₹${amount} | Status: Failed`;
+
+        addTransactionRow({ userPhone, amount, transactionType: type }, "error");
+      });
+    });
+
+
+    // Optional: join driver-specific room
+    socket.emit("transaction:room", { service: "driver-service" });
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,327 @@
+import { ApiError } from "../utils/apiError";
+import { ApiResponse } from "../utils/apiResponse";
+import { asyncHandler } from "../utils/asyncHandler";
+import { UserKeys, OneTimePreKey } from "../modals/keys.model";
+
+/* ---------------- validation helpers ---------------- */
+const isBase64 = (s: any) =>
+    typeof s === "string" && s.length > 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(s);
+
+// function validateUploadBody({ identityKey, signedPreKey, oneTimePreKeys }: any) {
+//     if (identityKey !== undefined && !isBase64(identityKey))
+//         return "identityKey must be base64";
+//
+//     if (signedPreKey !== undefined) {
+//         if (
+//             !Number.isInteger(signedPreKey?.keyId) ||
+//             !isBase64(signedPreKey?.publicKey) ||
+//             !isBase64(signedPreKey?.signature)
+//         )
+//             return "signedPreKey must be { keyId:int, publicKey:base64, signature:base64 }";
+//     }
+//
+//     if (oneTimePreKeys !== undefined) {
+//         const ok =
+//             Array.isArray(oneTimePreKeys) &&
+//             oneTimePreKeys.every(
+//                 (k) => Number.isInteger(k?.keyId) && isBase64(k?.publicKey)
+//             );
+//         if (!ok) return "oneTimePreKeys must be [{ keyId:int, publicKey:base64 }]";
+//     }
+//
+//     return null;
+// }
+
+// base64 string that decodes to exactly `bytes` bytes (32 for X25519/Ed25519 keys, 64 for Ed25519 sigs)
+const isKey = (s: any, bytes: number) =>
+    isBase64(s) && Buffer.from(s, "base64").length === bytes;
+
+function validateUploadBody({
+    v,
+    identitySignPub,
+    identityDHPub,
+    signedPreKeyPub,
+    signedPreKeySig,
+    oneTimePreKeys,
+}: any) {
+    if (v !== undefined && v !== "x3dh1")
+        return "v must be \"x3dh1\"";
+
+    if (identitySignPub !== undefined && !isKey(identitySignPub, 32))
+        return "identitySignPub must be a 32-byte base64 key";
+
+    if (identityDHPub !== undefined && !isKey(identityDHPub, 32))
+        return "identityDHPub must be a 32-byte base64 key";
+
+    if (signedPreKeyPub !== undefined && !isKey(signedPreKeyPub, 32))
+        return "signedPreKeyPub must be a 32-byte base64 key";
+
+    if (signedPreKeySig !== undefined && !isKey(signedPreKeySig, 64))
+        return "signedPreKeySig must be a 64-byte base64 signature";
+
+    // signed prekey and its signature must be sent together
+    if ((signedPreKeyPub === undefined) !== (signedPreKeySig === undefined))
+        return "signedPreKeyPub and signedPreKeySig must be sent together";
+
+    if (oneTimePreKeys !== undefined) {
+        const ok =
+            Array.isArray(oneTimePreKeys) &&
+            oneTimePreKeys.every((k) => isKey(k, 32));
+        if (!ok) return "oneTimePreKeys must be [base64 (32-byte key)]";
+    }
+
+    return null;
+}
+
+// export const uploadKeys = asyncHandler(async (req, res) => {
+//     if (!req.user) return new ApiResponse(401, null, "user not found");
+//     try {
+//         const invalid = validateUploadBody(req.body);
+//         if(invalid) return new ApiResponse(400, null, "invalid requests.");
+//
+//         const { identityKey, signedPreKey, oneTimePreKeys } = req.body;
+//         const userId = req.user._id.toString();
+//
+//         let record = await UserKeys.findOne({ userId });
+//
+//         if (!record) {
+//             // First registration: identityKey + signedPreKey required
+//             if (!identityKey)
+//                 return new ApiResponse(400, null, "identityKey required on first upload");
+//             if (!signedPreKey)
+//                 return new ApiResponse(400, null, "signedPreKey required on first upload");
+//             record = await UserKeys.create({ userId, identityKey, signedPreKey });
+//         } else {
+//             // Identity keys are permanent
+//             if (identityKey && identityKey !== record.identityKey)
+//                 return new ApiResponse(409, null, "identityKey mismatch — identity keys are permanent");
+//             // Signed prekey rotation
+//             if (signedPreKey) {
+//                 record.signedPreKey = { ...signedPreKey, createdAt: new Date() };
+//                 await record.save();
+//             }
+//         }
+//
+//         // Insert one-time prekey batch; duplicates (userId+keyId) silently skipped
+//         if (oneTimePreKeys?.length) {
+//             await OneTimePreKey.insertMany(
+//                 oneTimePreKeys.map((k: any) => ({
+//                     userId,
+//                     keyId: k.keyId,
+//                     publicKey: k.publicKey,
+//                 })),
+//                 { ordered: false }
+//             ).catch((e: any) => {
+//                 if (e.code !== 11000) throw e; // ignore duplicate-key errors only
+//             });
+//         }
+//
+//         const count = await OneTimePreKey.countDocuments({ userId });
+//         return new ApiResponse(200, { oneTimePreKeyCount: count }, "Keys uploaded successfully");
+//     } catch (err: any) {
+//         console.error("uploadKeys error:", err);
+//         return new ApiError("Internal error", 500, err.stack);
+//     }
+// });
+
+export const uploadKeys = asyncHandler(async (req, res) => {
+    if (!req.user) return new ApiResponse(401, null, "user not found");
+    try {
+        const invalid = validateUploadBody(req.body);
+        if (invalid) return new ApiResponse(400, null, invalid);
+
+        const {
+            v = "x3dh1",
+            identitySignPub,
+            identityDHPub,
+            signedPreKeyPub,
+            signedPreKeySig,
+            oneTimePreKeys,
+        } = req.body;
+
+        const userId = req.user._id.toString();
+
+        let record = await UserKeys.findOne({ userId });
+
+        // // Legacy record from the old keyId-based format: replace it and its old prekeys
+        // if (record && !record.identitySignPub) {
+        //     await UserKeys.deleteOne({ userId });
+        //     await OneTimePreKey.deleteMany({ userId });
+        //     record = null;
+        // }
+
+        if (!record) {
+            // First registration: identity keys + signed prekey required
+            if (!identitySignPub || !identityDHPub)
+                return new ApiResponse(400, null, "identitySignPub and identityDHPub required on first upload");
+            if (!signedPreKeyPub)
+                return new ApiResponse(400, null, "signedPreKeyPub and signedPreKeySig required on first upload");
+            record = await UserKeys.create({
+                userId,
+                phone: req.user.phone,
+                v,
+                identitySignPub,
+                identityDHPub,
+                signedPreKey: { publicKey: signedPreKeyPub, signature: signedPreKeySig },
+            });
+        } else if (
+            // legacy (keyId-based) record is updated in place to x3dh1
+            !record.identitySignPub ||
+            (identitySignPub && identitySignPub !== record.identitySignPub) ||
+            (identityDHPub && identityDHPub !== record.identityDHPub)
+        ) {
+            // // Identity keys are permanent
+            // return new ApiResponse(409, null, "identity key mismatch — identity keys are permanent");
+
+            // New identity from the authenticated owner (reinstall / cleared data / new phone):
+            // update it in place. Existing one-time prekeys are kept.
+            if (!identitySignPub || !identityDHPub)
+                return new ApiResponse(400, null, "identitySignPub and identityDHPub required when replacing identity");
+            if (!signedPreKeyPub)
+                return new ApiResponse(400, null, "signedPreKeyPub and signedPreKeySig required when replacing identity");
+
+            // await OneTimePreKey.deleteMany({ userId });
+            record.v = v;
+            record.phone = req.user.phone;
+            // record.identitySignPub = identitySignPub;
+            // record.identityDHPub = identityDHPub;
+            // identity keys are immutable in the schema; a plain assignment is silently ignored
+            record.$set("identitySignPub", identitySignPub, undefined, { overwriteImmutable: true });
+            record.$set("identityDHPub", identityDHPub, undefined, { overwriteImmutable: true });
+            record.signedPreKey = {
+                publicKey: signedPreKeyPub,
+                signature: signedPreKeySig,
+                createdAt: new Date(),
+            };
+            await record.save();
+        } else {
+            // Signed prekey rotation
+            if (signedPreKeyPub) {
+                record.signedPreKey = {
+                    publicKey: signedPreKeyPub,
+                    signature: signedPreKeySig,
+                    createdAt: new Date(),
+                };
+                await record.save();
+            }
+        }
+
+        // Insert one-time prekey batch; duplicates (userId+publicKey) silently skipped
+        if (oneTimePreKeys?.length) {
+            await OneTimePreKey.insertMany(
+                oneTimePreKeys.map((publicKey: string) => ({ userId, phone: req.user.phone, publicKey })),
+                { ordered: false }
+            ).catch((e: any) => {
+                if (e.code !== 11000) throw e; // ignore duplicate-key errors only
+            });
+        }
+
+        const count = await OneTimePreKey.countDocuments({ userId });
+        return new ApiResponse(200, { oneTimePreKeyCount: count }, "Keys uploaded successfully");
+    } catch (err: any) {
+        console.error("uploadKeys error:", err);
+        return new ApiError("Internal error", 500, err.stack);
+    }
+});
+
+// export const getPreKeyCount = asyncHandler(async (req, res) => {
+//     try {
+//         const count = await OneTimePreKey.countDocuments({ userId: req.user._id.toString() });
+//         const data = {
+//             oneTimePreKeyCount: count,
+//             shouldReplenish: count < 10
+//         }
+//         return new ApiResponse(200, data, "PreKey count retrieved successfully");
+//     } catch (err) {
+//         console.error("getPreKeyCount error:", err);
+//         return new ApiError("Internal error", 500);
+//     }
+// });
+
+export const getPreKeyCount = asyncHandler(async (req, res) => {
+    if (!req.user) return new ApiResponse(401, null, "user not found");
+    try {
+        const userId = req.user._id.toString();
+
+        // Missing or legacy (keyId-based) record: client must do a full x3dh1 upload
+        const record = await UserKeys.findOne({ userId }, { identitySignPub: 1, signedPreKey: 1 }).lean();
+        if (!record?.identitySignPub) {
+            const data = {
+                registered: false,
+                oneTimePreKeyCount: 0,
+                shouldReplenish: true,
+                signedPreKeyCreatedAt: null,
+            };
+            return new ApiResponse(200, data, "PreKey count retrieved successfully");
+        }
+
+        const count = await OneTimePreKey.countDocuments({ userId });
+        const data = {
+            registered: true,
+            oneTimePreKeyCount: count,
+            shouldReplenish: count < 10,
+            signedPreKeyCreatedAt: record.signedPreKey?.createdAt ?? null,
+        };
+        return new ApiResponse(200, data, "PreKey count retrieved successfully");
+    } catch (err) {
+        console.error("getPreKeyCount error:", err);
+        return new ApiError("Internal error", 500);
+    }
+});
+
+// export const getKeyBundle = asyncHandler(async (req, res) => {
+//     try {
+//         const { userId } = req.params;
+//
+//         const record = await UserKeys.findOne({ userId }).lean();
+//         if (!record) return new ApiResponse(404, null, "User has no registered keys");
+//
+//         // ATOMIC pop: concurrent senders can never receive the same prekey
+//         const otp = await OneTimePreKey.findOneAndDelete({ userId }).lean();
+//
+//         let data = {
+//             userId,
+//             identityKey: record.identityKey,
+//             signedPreKey: {
+//                 keyId: record.signedPreKey.keyId,
+//                 publicKey: record.signedPreKey.publicKey,
+//                 signature: record.signedPreKey.signature,
+//             },
+//             oneTimePreKey: otp ? { keyId: otp.keyId, publicKey: otp.publicKey } : null,
+//         };
+//         return new ApiResponse(200, data, "Key bundle retrieved successfully");
+//     } catch (err) {
+//         console.error("getKeyBundle error:", err);
+//         return new ApiError("Internal error", 500);
+//     }
+// });
+
+export const getKeyBundle = asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const record = await UserKeys.findOne({ phone: userId }).lean();
+        // Legacy (keyId-based) records can't be used for x3dh1 — treat as unregistered
+        if (!record?.identitySignPub)
+            return new ApiResponse(404, null, "User has no registered keys");
+        
+        // const otp = await OneTimePreKey.findOneAndDelete({ phone: userId }, { sort: { createdAt: 1 } }).lean();
+
+        // Read without deleting. Newest first so that after a reinstall the key comes from the current install.
+        const otp = await OneTimePreKey.findOne({ phone: userId }, { publicKey: 1 }, { sort: { createdAt: -1 } }).lean();
+
+        const data = {
+            v: record.v,
+            userId,
+            identitySignPub: record.identitySignPub,
+            identityDHPub: record.identityDHPub,
+            signedPreKeyPub: record.signedPreKey.publicKey,
+            signedPreKeySig: record.signedPreKey.signature,
+            oneTimePreKey: otp ? otp.publicKey : null,
+        };
+        return new ApiResponse(200, data, "Key bundle retrieved successfully");
+    } catch (err) {
+        console.error("getKeyBundle error:", err);
+        return new ApiError("Internal error", 500);
+    }
+});

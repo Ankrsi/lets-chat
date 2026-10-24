@@ -1,0 +1,251 @@
+{
+  "title": "Mediasoup Monitoring",
+  "refresh": "5s",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+
+  "templating": {
+    "list": [
+      {
+        "name": "conversationId",
+        "type": "query",
+        "label": "Conversation ID",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PROMETHEUS"
+        },
+        "definition": "label_values(mediasoup_transports, conversationId)",
+        "query": "label_values(mediasoup_transports, conversationId)",
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false
+      }
+    ]
+  },
+
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Workers",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "mediasoup_workers", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Transports",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "mediasoup_transports_global", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total Producers",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "mediasoup_producers_global", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Total Consumers",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "mediasoup_consumers_global", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Incoming Bitrate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "mediasoup_bitrate_in_global", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bps" }
+      }
+    },
+
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Outgoing Bitrate",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "mediasoup_bitrate_out_global", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bps" }
+      }
+    },
+
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Active Calls",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+
+      "targets": [
+        {
+          "expr": "count by(conversationId) (mediasoup_transports > 0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "callId": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "Value": "Transports"
+            }
+          }
+        }
+      ],
+
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "conversationId"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Conversation ID"
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "link"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Show Call Details",
+                    "url": "?var-conversationId=${__value.text}",
+                    "targetBlank": false
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Call Transports",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "max(mediasoup_transports{conversationId=~\"${conversationId}\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Call Producers",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 20 },
+      "targets": [
+        {
+          "expr": "max(mediasoup_producers{conversationId=~\"${conversationId}\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Call Consumers",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "max(mediasoup_consumers{conversationId=~\"${conversationId}\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Call Packet Loss",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 20 },
+      "targets": [
+        {
+          "expr": "max(mediasoup_packet_loss{conversationId=~\"${conversationId}\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" }
+      }
+    },
+
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Per Call Bitrate In",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "mediasoup_bitrate_in{conversationId=~\"${conversationId}\"}",
+          "legendFormat": "{{callId}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bps" }
+      }
+    },
+
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Per Call Bitrate Out",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "mediasoup_bitrate_out{callId=~\"${callId}\"}",
+          "legendFormat": "{{callId}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bps" }
+      }
+    }
+
+  ]
+}

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Simple Group Call</title>
+  <style>
+    body {
+      font-family: Arial;
+      max-width: 900px;
+      margin: 20px auto;
+    }
+
+    .row {
+      margin: 10px 0;
+    }
+
+    video {
+      width: 260px;
+      height: 180px;
+      background: black;
+      border-radius: 6px;
+      margin-right: 10px;
+    }
+
+    #videos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      padding: 5px 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Video Chat</h2>
+
+  <div class="row">
+    <input id="username" placeholder="Your username">
+    <button id="btnRegister">Register</button>
+  </div>
+
+  <div class="row">
+    <input id="callTarget" placeholder="Username to call">
+    <button id="btnCall">Call</button>
+    <button id="btnAdd" style="display:none">➕ Add User</button>
+  </div>
+
+  <h3>Videos</h3>
+  <div id="videos">
+    <video id="localVideo" autoplay muted playsinline></video>
+  </div>
+
+  <button id="btnLeave" style="display:none;margin-top: 10px;">End Call</button>
+
+  <div id="callModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:#fff; padding:20px; border:2px solid #333; border-radius:8px; z-index:1000;">
+    <p id="callerName"></p>
+    <button id="callacceptBtn">Accept</button>
+    <button id="calldeclineBtn">Decline</button>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    // const socket = io("https://months-previous-til-gpl.trycloudflare.com", {
+    // const socket = io("wss://superapp-event-service.testsdlc.in", {
+    const socket = io("http://localhost:4022", {
+      // const socket = io("https://89.116.121.48:4022", {
+      transports: ["websocket"],
+      reconnection: true,           // enable automatic reconnection
+      reconnectionAttempts: 5,      // number of attempts before giving up
+      reconnectionDelay: 1000,      // initial delay before retry (ms)
+      reconnectionDelayMax: 5000,   // max delay between retries (ms)
+      auth: { token: sessionStorage.getItem("token") },
+    });
+
+    let localStream = null;
+    let currentCallId = null;
+    let peers = {};
+    let remoteVideos = {};
+
+    const usernameInput = document.getElementById("username");
+    const callTargetInput = document.getElementById("callTarget");
+    const btnRegister = document.getElementById("btnRegister");
+    const btnCall = document.getElementById("btnCall");
+    const btnAdd = document.getElementById("btnAdd");
+    const localVideo = document.getElementById("localVideo");
+    const videosDiv = document.getElementById("videos");
+    const callModal = document.getElementById("callModal");
+    const callerName = document.getElementById("callerName");
+    const callacceptBtn = document.getElementById("callacceptBtn");
+    const calldeclineBtn = document.getElementById("calldeclineBtn");
+    const btnLeave = document.getElementById("btnLeave");
+
+    async function ensureLocalStream() {
+      if (!localStream) {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+      }
+      return localStream;
+    }
+
+    function createPeer(username) {
+      if (peers[username]) return peers[username];
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          {
+            urls: [
+              "turn:89.116.121.48:3478?transport=udp",
+              "turn:89.116.121.48:3478?transport=tcp",
+              "turns:89.116.121.48:5349?transport=tcp"
+            ],
+            username: "sdlccorp@superapp@eventserverturn",
+            credential: "superappturn1a9k9s7.@sdlccorp.@docker"
+          }
+        ]
+      });
+
+      if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      pc.ontrack = e => {
+        const [stream] = e.streams;
+        if (!remoteVideos[username]) {
+          const v = document.createElement("video");
+          v.id = "video-" + username;
+          v.autoplay = true;
+          v.playsInline = true;
+          videosDiv.appendChild(v);
+          remoteVideos[username] = v;
+        }
+        remoteVideos[username].srcObject = stream;
+      };
+
+      pc.onicecandidate = e => {
+        if (e.candidate) {
+          socket.emit("video:ice-candidate", { from: usernameInput.value, to: username, candidate: e.candidate });
+        }
+      };
+
+      peers[username] = pc;
+      return pc;
+    }
+
+    function cleanupPeer(username) {
+      if (peers[username]) { peers[username].close(); delete peers[username]; }
+      const v = document.getElementById("video-" + username);
+      if (v) v.remove();
+      delete remoteVideos[username];
+    }
+
+    btnRegister.onclick = async () => {
+      const username = usernameInput.value.trim();
+      if (!username) return alert("Enter username");
+      await ensureLocalStream();
+      socket.emit("registerUser", { senderId: username });
+      btnRegister.disabled = true;
+      btnCall.disabled = false;
+    };
+
+    btnCall.onclick = () => {
+      const from = usernameInput.value.trim();
+      const to = callTargetInput.value.trim();
+      if (!from || !to) return alert("Enter both usernames");
+      currentCall = "eedrie-nmcd-rr";
+      socket.emit("video:start-call", { callId: "eedrie-nmcd-rr", from, to, conversationId: "6989bcf1b82b60e854587aa5" });
+    };
+
+    btnAdd.onclick = () => {
+      const usernameToAdd = prompt("Enter username to add:");
+      const from = usernameInput.value.trim();
+      if (!usernameToAdd || !currentCallId) return;
+      socket.emit("video:add-user", { callId: currentCallId, from, username: usernameToAdd });
+    };
+
+    btnLeave.onclick = () => {
+      // socket.emit("video:left-user", { callId: currentCallId ,username:usernameInput.value});
+      Object.keys(peers).forEach(users => cleanupPeer(users));
+      socket.emit("video:remove-user", { callId: currentCallId, username: usernameInput.value });
+    }
+
+    socket.on("video:call-started", async ({ callId, to, from }) => {
+      currentCallId = callId;
+      btnAdd.style.display = "inline-block";
+      const pc = createPeer(from);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("video:offer", { from: usernameInput.value, to: from, offer, callId });
+    });
+
+    socket.on("video:incoming-call", ({ from, callId, to, conversationId }) => {
+      socket.emit("video:missed-call-timmer", { from, callId, to, conversationId });
+      callerName.textContent = `${from} is calling...`;
+      callModal.style.display = "block";
+      callacceptBtn.onclick = () => {
+        callModal.style.display = "none";
+        currentCallId = callId;
+        btnAdd.style.display = "inline-block";
+        socket.emit("video:accept-call", { callId, from: usernameInput.value, to: from });
+      };
+
+      calldeclineBtn.onclick = () => {
+        callModal.style.display = "none";
+        socket.emit("video:reject-call", { callId, from: usernameInput.value, to: from });
+      };
+    });
+
+    socket.on("video:missed-call", ({ from, callId }) => {
+      callModal.style.display = "none";
+      alert(`missed call from ${from}`)
+    });
+
+    socket.on("video:call-accepted", ({ callId }) => {
+      currentCallId = callId;
+      btnAdd.style.display = "inline-block";
+      btnLeave.style.display = "block";
+    });
+
+    socket.on("video:call-rejected", ({ callId }) => {
+      alert("call rejected by user");
+    });
+
+    socket.on("video:user-joined", async ({ username }) => {
+      const pc = createPeer(username);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("video:offer", { from: usernameInput.value, to: username, offer });
+      btnLeave.style.display = "block";
+    });
+
+    socket.on("video:add-to-call", ({ from, callId, username }) => {
+      callerName.textContent = `${from} is calling...`;
+      callModal.style.display = "block";
+      callacceptBtn.onclick = async () => {
+        callModal.style.display = "none";
+        currentCallId = callId;
+        btnAdd.style.display = "inline-block";
+        btnLeave.style.display = "block";
+        socket.emit("video:add-user-accept", { username, callId });
+      };
+
+      calldeclineBtn.onclick = () => {
+        callModal.style.display = "none";
+      };
+    });
+
+    socket.on("video:offer", async ({ from, offer }) => {
+      const pc = createPeer(from);
+      await ensureLocalStream();
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit("video:answer", { from: usernameInput.value, to: from, answer: answer });
+    });
+
+    socket.on("video:answer", async ({ from, answer }) => {
+      const pc = peers[from];
+      if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    socket.on("video:ice-candidate", async ({ from, candidate }) => {
+      const pc = peers[from];
+      if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
+    socket.on("video:user-remove", ({ username, callId }) => {
+      cleanupPeer(username);
+      if (Object.keys(peers).length == 0) {
+        btnAdd.style.display = "none";
+        btnLeave.style.display = "none";
+        socket.emit("video:end-call", { callId, from: usernameInput.value, conversationId: "6989bcf1b82b60e854587aa5" });
+      }
+    });
+
+    socket.on("video:clear-call", ({ username, callId }) => {
+      cleanupPeer(username);
+      if (Object.keys(peers).length == 0) {
+        btnAdd.style.display = "none";
+        btnLeave.style.display = "none";
+        socket.emit("video:end-call", { callId, from: usernameInput.value, conversationId: "6989bcf1b82b60e854587aa5" });
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      Object.keys(peers).forEach(k => { try { peers[k].close(); } catch { } });
+    });
+  </script>
+</body>
+
+</html>
