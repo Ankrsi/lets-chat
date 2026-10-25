@@ -17,7 +17,6 @@ ENV NODE_ENV=production
 COPY --from=builder --chown=node:node /app/package*.json ./
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
-COPY --from=builder --chown=node:node /app/public ./public
 USER node
 # 4021 HTTP API, 4022 Socket.IO, 10000-20000/udp mediasoup (group calls)
 EXPOSE 4021 4022 10000-20000/udp
