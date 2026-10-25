@@ -1,5 +1,4 @@
 import admin from "firebase-admin";
-// import serviceAccount from "./service.json";
 const serviceAccount = JSON.parse(process.env.SERVICE_ACCOUNT_JSON || "{}");
 
 // Initialize Firebase Admin SDK

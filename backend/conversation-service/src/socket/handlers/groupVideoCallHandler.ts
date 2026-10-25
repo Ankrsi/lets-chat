@@ -1,19 +1,17 @@
 import { Socket } from "socket.io";
 import { consumers, producers, routers, transportsById, userTransports, worker } from "..";
 import { getConversationMembers } from "../../controllers/chats/chats.controller";
-import { redisClient } from "../../redis/redisClient";
+import { getMany, redisClient } from "../../redis/redisClient";
 import { sendAudioVideoFCMNotification } from "../../services/audioVideoFcm.service";
-import { removeMetricsForCall } from "../mediasoupMetrics";
 import { getAnnouncedIp } from "../../utils/publicIp";
+import { socketsOf } from "../fanOut";
 
 interface SocketWithTimeouts extends Socket {
   callTimeouts?: { [callId: string]: NodeJS.Timeout };
 }
 
-// const ttl = 30; // Default TTL of 30 seconds
 const videoLevelObservers = new Map<string, any>();
 
-// export const groupCallHandler = (socket: SocketWithTimeouts, io: Server, producer: any, redisPublisher: any) => {
 export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher: any) => {
   socket.on("group:video-start-call", async ({ callId, from, conversationId, callType, timeStamp = Date.now() }) => {
     console.info(`Group call initiated by ${from} for conversation ${conversationId} with callId ${callId} at ${timeStamp}`);
@@ -28,18 +26,15 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
     let participants = [...new Set([from, ...convMember])]
     let newData = { participants, conversationId, type: callType == "video" ? "groupVideoCall" : "groupAudioCall", connectedUser: [from], host: from };
     await redisClient.set(`audioVideoActiveCall:${callId}`, JSON.stringify(newData), { EX: 12 * 60 * 60 }); // 12 hours in seconds
+    // Ring everyone who isn't already in a call (one MGET for all members)
     const targets = convMember.filter(id => id != from);
-    for (let member of targets) {
-      if (member == from) continue;
-      // const toSid = await redisClient.hGet("userSocketMap", member);
-      // if (toSid) io.to(JSON.parse(toSid)).emit("group:video-incoming", { callId, from, conversationId });
-      let isUserOnline = await redisPublisher.get(`user:${member.toString()}:inCall`);
-      if (isUserOnline != '1' || isUserOnline != 1) {
-        sendAudioVideoFCMNotification(member, {
-          callId, fromm: from, to: member, conversationId, isIncoming: true, messageType: 'group_video', offerType: "initial", callType, timestamp: timeStamp
-        }, "individual");
-      }
-    }
+    const busy = await getMany(redisPublisher, targets.map((m) => `user:${m}:inCall`));
+    targets.forEach((member, i) => {
+      if (busy[i] === "1") return;
+      sendAudioVideoFCMNotification(member, {
+        callId, fromm: from, to: member, conversationId, isIncoming: true, messageType: 'group_video', offerType: "initial", callType, timestamp: timeStamp
+      }, "individual").catch(console.error);
+    });
   });
 
   socket.on("video:joinRoom", async ({ conversationId, userId, callId, timestamp }, cb) => {
@@ -89,7 +84,6 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
     }
 
     let data = JSON.parse(await redisClient.get(`audioVideoActiveCall:${callId}`) || "{}");
-    // let newData = { ...data, connectedUser: [...(data.connectedUser || []), String(userId)] };
     let newData = { ...data, connectedUser: [...new Set([...(data.connectedUser || []), String(userId)])] };
     await redisClient.set(`audioVideoActiveCall:${callId}`, JSON.stringify(newData), { EX: 12 * 60 * 60 });
 
@@ -127,7 +121,6 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
       if (!router) return callback({ error: "router not found for room" });
 
       const transport = await router.createWebRtcTransport({
-        // listenIps: [{ ip: "0.0.0.0", announcedIp: process.env.IP || '127.0.0.1' }],
         listenIps: [{ ip: "0.0.0.0", announcedIp: getAnnouncedIp() }],
         enableUdp: true,
         enableTcp: true,
@@ -191,7 +184,6 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
       // notify peers in room to consume
       socket.to(socket.data.conversationId).emit("video:newProducer", {
         producerId: producer.id,
-        // kind,
         userId: socket.data.userId,
       });
 
@@ -266,17 +258,18 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
     await redisPublisher.del(`user:${userId}:inCall`);
     let participants = callData.participants || []
     console.info(`User: ${userId} leaving room: ${conversationId} call id: ${callId}. Participants before leaving:`, participants);
-    for (let usr of participants) {
-      const socketIds = await redisClient.hGet("userSocketMap", String(usr));
-      socket.to(JSON.parse(socketIds || "[]")).emit("video:userLeft", { userId });
+    const sockets = await socketsOf(participants.map(String));
+    participants.forEach((usr: any, i: number) => {
+      if (!sockets[i].length) return;
+      socket.to(sockets[i]).emit("video:userLeft", { userId });
       if (userId == callData.host && usr != userId && callData.connectedUser?.length == 0) {
-        socket.to(JSON.parse(socketIds || "[]")).emit("video:callCanceled", { from: userId });
+        socket.to(sockets[i]).emit("video:callCanceled", { from: userId });
       }
-      if (callData.connectedUser?.length <= 1) {
-        sendAudioVideoFCMNotification(usr, {
-          callId, fromm: userId, to: "", isIncoming: false, messageType: 'group_video', offerType: 'CALL_ENDED', callType: 'caller_cancelled'
-        }, "individual");
-      }
+    });
+    if (callData.connectedUser?.length <= 1) {
+      participants.forEach((usr: any) => sendAudioVideoFCMNotification(usr, {
+        callId, fromm: userId, to: "", isIncoming: false, messageType: 'group_video', offerType: 'CALL_ENDED', callType: 'caller_cancelled'
+      }, "individual").catch(console.error));
     }
 
     for (const [pid, entry] of producers) {
@@ -316,7 +309,6 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
       if (router) {
         try { router.close(); } catch (e) { console.info(e); }
         routers.delete(conversationId);
-        removeMetricsForCall(conversationId);
         await redisPublisher.del(`user:${conversationId}:inCall`);
         console.info(`Room ${conversationId} cleaned up — no participants left`);
       }
@@ -336,7 +328,6 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
         }
         await redisPublisher.del(`user:${conversationId}:inCall`);
         routers.delete(conversationId);
-        removeMetricsForCall(conversationId);
       }
       (async () => {
         await redisClient.del(`audioVideoActiveCall:${conversationId}`);
@@ -416,7 +407,6 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
             callType: "audio",
           };
 
-          // if (convInCall === '1') {
           const callData = await redisClient.get(`audioVideoActiveCall:${convId}`);
 
           if (callData) {
@@ -429,7 +419,6 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
               callType: parsed.callType || (parsed.type === "groupAudioCall" ? "audio" : "video"),
             };
           }
-          // }
 
           return {
             conversationId: convId,
@@ -448,7 +437,7 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
 
   socket.on("video:group_call_started", async ({ to }) => {
     if (!to) return;
-    const targetSocketId = JSON.parse(await redisClient.hGet("userSocketMap", to) || "[]");
+    const [targetSocketId] = await socketsOf([String(to)]);
     if (targetSocketId.length > 0) {
       socket.to(targetSocketId).emit("video:group_call_started", { isConnected: true });
     }

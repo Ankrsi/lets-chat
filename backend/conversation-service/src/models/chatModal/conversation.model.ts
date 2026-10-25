@@ -34,7 +34,6 @@ export interface IConversation extends Document {
 const conversationSchema = new Schema<IConversation>(
   {
     type: { type: String, enum: ["single", "group"], required: true },
-    // members: [{ type: Schema.Types.ObjectId, ref: "User", required: true }],
     members: [{ type: String, required: true }],
     removedMembers: [{ type: String, required: true }],
     name: { type: String, default: null }, // for group

@@ -10,13 +10,7 @@ function stringifyData(data: any = {}): Record<string, string> {
     return result;
 }
 
-const VoipNotificationType: Record<string, string> = {
-    // taxi_driver: process.env.client == "true" ? "com.mafado.partner.voip" : "com.NGApp.partner.voip",
-    taxi_driver: "com.mafado.partner.voip",
-    // individual: process.env.client == "true" ? "com.mafado.omniia.voip" : "com.superapp.NGApp.voip"
-    individual: "com.mafado.omniia.voip"
-};
-console.info("VoipNotificationType: ", VoipNotificationType);
+const VOIP_TOPIC = "com.mafado.omniia.voip";
 
 interface FCMMessageParams {
     token: string;
@@ -30,20 +24,14 @@ interface FCMMessagesParams {
 
 let options = {
     token: {
-        // key: "src/utils/AuthKey_3BK888US97.p8",
-        // key: "src/utils/AuthKey_89NW93HZG6.p8",
         key: process.env.VOIP_AUTH_KEY!.replace(/\\n/g, '\n'),
         keyId: process.env.VOIP_KEY_ID!,
         teamId: process.env.VOIP_TEAM_ID!,
-        // teamId: "3F476WD2WZ",
     },
     production: process.env.production == "true"
-    // production: false
 };
 
 let apnProvider = new Provider(options);
-console.info("APN Provider initialized with options: ", options);
-console.info("APN Provider initialized keys: ", options.token.key);
 
 // apn@2.2.0 only sends "apns-expiration" when expiry > 0, so `expiry = 0` drops the header
 // and APNs falls back to store-and-forward: an offline device gets a stale call when it
@@ -64,8 +52,7 @@ export const sendVoipToDevice = async ({ token, data }: FCMMessageParams) => {
     try {
         const safeData = stringifyData(data);
         let notification = new Notification();
-        // notification.pushType = "voip";
-        notification.topic = VoipNotificationType[data?.role];
+        notification.topic = VOIP_TOPIC;
         notification.payload = safeData;
         notification.expiry = 0;
         withNoStoreVoipHeaders(notification);
@@ -79,13 +66,10 @@ export const sendVoipToDevice = async ({ token, data }: FCMMessageParams) => {
 
 export const sendVoipsToDevice = async ({ tokens, data }: FCMMessagesParams) => {
     try {
-        // const expirySeconds = Math.floor(Date.now() / 1000) + 30;
         const safeData = stringifyData(data);
         let notification = new Notification();
-        // notification.pushType = "voip";
-        notification.topic = VoipNotificationType[data?.role];
+        notification.topic = VOIP_TOPIC;
         notification.payload = safeData;
-        // notification.expiry = expirySeconds;
         withNoStoreVoipHeaders(notification);
 
         return await apnProvider.send(notification, tokens);

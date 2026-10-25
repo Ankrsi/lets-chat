@@ -10,11 +10,7 @@ import { RouteErrorHandler } from "./middlewares/routeErrorHandler.middleware";
 
 // Routes
 import helloWorldRouter from "./routes/hello.route";
-// import fcmRoute from "./routes/user.routes";
 import fcmRoute from "./routes/fcm.route";
-
-// DB Connection
-import { connectDB } from "./config/connectDB";
 
 const app = express();
 
@@ -35,16 +31,6 @@ app.use(
 //  Prevent HTTP Parameter Pollution
 app.use(hpp());
 
-// Rate Limiting (basic - 100 requests per 15 minutes)
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000, // 15 minutes
-//   max: 100, // limit each IP
-//   message: "Too many requests from this IP, please try again later",
-//   standardHeaders: true,
-//   legacyHeaders: false,
-// });
-// app.use(limiter);
-
 // Body Parser & URL encoding
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -62,7 +48,6 @@ app.use((req, res, next) => {
 //  Routes
 app.use("/", helloWorldRouter);
 app.use("/api/v1/fcm", fcmRoute);
-// app.use("/fcm", fcmRoute);
 
 // Invalid Path Error Handler
 app.use(RouteErrorHandler);
@@ -71,16 +56,10 @@ app.use(RouteErrorHandler);
 app.use(ErrorHandler);
 
 //  Run method
-(app as CustomExpress).run = async () => {
-  try {
-    await connectDB();
-    app.listen(process.env.FCM_PORT ?? 4019, () => {
-      console.info("⚙️", ` Server is running securely at port : ${process.env.FCM_PORT ?? 4019}`);
-    });
-  } catch (err) {
-    console.error((err as Error).message);
-    process.exit(1);
-  }
+(app as CustomExpress).run = () => {
+  app.listen(process.env.FCM_PORT ?? 4019, () => {
+    console.info("⚙️", ` Server is running securely at port : ${process.env.FCM_PORT ?? 4019}`);
+  });
 };
 
 export default app as CustomExpress;

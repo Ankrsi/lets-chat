@@ -20,5 +20,8 @@ const allfriendsContactSchema = new Schema<IAllFriendsContact>(
     { timestamps: true }
 );
 
+// Every lookup is by phone (socket registration, block checks, status refresh, contact sync)
+allfriendsContactSchema.index({ phone: 1 });
+
 const AllFriendsContact = model<IAllFriendsContact>("AllFriendsContact", allfriendsContactSchema);
 export default AllFriendsContact;

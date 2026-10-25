@@ -62,3 +62,7 @@ export const connectRedis = async () => {
 
   console.info("Redis clients connected");
 };
+
+/** GET for several keys, pipelined. Unlike MGET it also works when the keys live on different Redis Cluster nodes. */
+export const getMany = (client: { get: (key: string) => Promise<string | null> }, keys: string[]): Promise<(string | null)[]> =>
+  Promise.all(keys.map((k) => client.get(k)));

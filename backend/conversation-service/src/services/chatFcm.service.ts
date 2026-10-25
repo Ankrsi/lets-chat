@@ -1,5 +1,4 @@
 import axios from "axios";
-// import { IChatMessage } from "../kafka/chatConsumer";
 
 export interface IChatMessage {
   messageId: string,
@@ -50,7 +49,6 @@ export const sendChatFCMNotification = async (receiverId: string, message: IChat
     const payload = {
       receiverPhone: receiverId,
       tokens: uniqueTokens,
-      // notification: { title, body },
       data: {
         ...message,
         screen: "chat_screen",

@@ -2,8 +2,7 @@ import { StatusPrivacy } from "../../models/chatModal/statusPrivacy.model";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { Request, Response } from "express";
 import { ApiResponse } from "../../utils/apiResponse";
-import { t } from "i18next";
-import { uploadToS3 } from "../../utils/s3Upload";
+import { deleteR2Object, keyFromPublicUrl, uploadToR2 } from "../../utils/r2Upload";
 import mongoose from "mongoose";
 import AllFriendsContact from "../../models/contactModal/allFriendsContact.model";
 import { redisPublisher } from "../../redis/redisClient";
@@ -12,70 +11,64 @@ import { ChatStatus } from "../../models/chatModal/status.modal";
 
 // add image/video status
 export const addStatus = asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) return new ApiResponse(401, null, t("USER_NOT_FORUND", req.language || "en") as string);
+    if (!req.user) return new ApiResponse(401, null, "User not found");
     if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
-        return new ApiResponse(400, null, t("NO_IMAGE_OR_VIDEO_IS_AVAILABLE_TO_UPLOAD", req.language || "en") as string);
+        return new ApiResponse(400, null, "No image or video is available to upload");
     }
     try {
-        let index = 0;
-        let timestamp = req.body.timestamp ? new Date(req.body.timestamp) : new Date();
-        const captions = Array.isArray(req.body.captions)
-            ? req.body.captions
-            : [req.body.captions];
+        const files = req.files as Express.Multer.File[];
+        const timestamp = req.body.timestamp ? new Date(req.body.timestamp) : new Date();
+        const captions = Array.isArray(req.body.captions) ? req.body.captions : [req.body.captions];
+        const typeOf = (f: Express.Multer.File) =>
+            f.mimetype.startsWith("image/") ? "image" : f.mimetype.startsWith("video/") ? "video" : null;
+        if (files.some((f) => !typeOf(f))) return new ApiResponse(400, null, "Only images and videos can be posted");
 
-        for (let file of req.files as Express.Multer.File[]) {
-            const mediaType = file.mimetype.startsWith("image/") ? "image" : file.mimetype.startsWith("video/") ? "video" : null;
-            const uploadedUrl = await uploadToS3({
-                file,
-                folder: `status-${req.user?.phone}-${new mongoose.Types.ObjectId()}`,
-            });
-            if (!uploadedUrl || !mediaType) return new ApiResponse(400, null, t("MEDIAURL_AND_MEDIATYPE_REQUIRED", req.language || "en") as string);
-
-            // Create individual story document
-            await ChatStatus.create({
-                phone: req.user.phone,
-                url: uploadedUrl,
-                type: mediaType,
-                caption: captions[index] || null,
-                viewers: [],
-                createdAt: timestamp,
-                expiresAt: new Date(timestamp.getTime() + 24 * 60 * 60 * 1000)
-            });
-            index++;
-        }
+        // Upload all files at once, then save every story in one write
+        const urls = await Promise.all(files.map((file) =>
+            uploadToR2({ file, folder: `status-${req.user?.phone}-${new mongoose.Types.ObjectId()}` })));
+        const expiresAt = new Date(timestamp.getTime() + 24 * 60 * 60 * 1000);
+        await ChatStatus.insertMany(files.map((file, i) => ({
+            phone: req.user.phone,
+            url: urls[i],
+            type: typeOf(file),
+            caption: captions[i] || null,
+            viewers: [],
+            createdAt: timestamp,
+            expiresAt,
+        })));
 
         await redisPublisher.publish(`chatStatusRefresh`, JSON.stringify({ phone: req.user.phone }));
 
-        return new ApiResponse(200, null, t("YOUR_STATUS_ADDED", req.language || "en") as string);
+        return new ApiResponse(200, null, "Your status has been added");
     } catch (err) {
         console.error(err);
-        return new ApiResponse(500, null, t("SERVER_ERROR", req.language || "en") as string);
+        return new ApiResponse(500, null, "Server error");
     }
 });
 
 // remove image/video status
 export const removeStatus = asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) return new ApiResponse(401, null, t("USER_NOT_FORUND", req.language || "en") as string);
+    if (!req.user) return new ApiResponse(401, null, "User not found");
     const { storyId } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(storyId)) return new ApiResponse(400, null, "Invalid status id");
 
-    const storyObjectId = new mongoose.Types.ObjectId(storyId);
-    const deletedStory = await ChatStatus.findByIdAndDelete(storyObjectId);
-
+    // Only the owner can delete their status
+    const deletedStory = await ChatStatus.findOneAndDelete({ _id: storyId, phone: String(req.user.phone) }).lean();
     if (!deletedStory) {
-        return new ApiResponse(400, null, t("YOUR_STATUS_NOT_FOUND", req.language || "en") as string);
+        return new ApiResponse(400, null, "Your status not found");
     }
+    const key = keyFromPublicUrl(deletedStory.url);
+    if (key) deleteR2Object(key).catch((e) => console.error("delete status file failed", e));
 
     await redisPublisher.publish(`chatStatusRefresh`, JSON.stringify({ phone: req.user.phone }));
-    return new ApiResponse(200, null, t("YOUR_STATUS_DELETED", req.language || "en") as string);
+    return new ApiResponse(200, null, "Your status has been deleted");
 });
 
 // get all status
 export const getAllStatus = asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) return new ApiResponse(401, null, t("USER_NOT_FORUND", req.language || "en") as string);
+    if (!req.user) return new ApiResponse(401, null, "User not found");
     try {
-        let contactsData = await AllFriendsContact.findOne({
-            phone: req.user.phone
-        });
+        const contactsData: any = await AllFriendsContact.findOne({ phone: req.user.phone }).select("-_id contacts.phone").lean();
 
         let phoneNumbers = contactsData?.contacts?.map((c: any) => c.phone.toString()) || [];
 
@@ -153,50 +146,56 @@ export const getAllStatus = asyncHandler(async (req: Request, res: Response) => 
             }
         ]);
 
-        return new ApiResponse(200, allStatus, t("ALL_STATUS_FETCHED", req.language || "en") as string);
+        // Viewer lists are only for the owner; on other people's stories just say whether I've seen it
+        const me = req.user.phone.toString();
+        for (const group of allStatus) {
+            if (group.phone === me) continue;
+            for (const story of group.stories) {
+                story.viewers = (story.viewers ?? []).filter((v: any) => String(v.phone) === me);
+            }
+        }
+
+        return new ApiResponse(200, allStatus, "All Status fetched.");
     } catch {
-        return new ApiResponse(500, null, t("SERVER_ERROR", req.language || "en") as string);
+        return new ApiResponse(500, null, "Server error");
     }
 });
 
 // mark as viewed
 export const markStatusAsViewed = asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) return new ApiResponse(401, null, t("USER_NOT_FORUND", req.language || "en") as string);
+    if (!req.user) return new ApiResponse(401, null, "User not found");
     try {
         const { statusId } = req.params;
         const { timestamp } = req.query;
-        if (!statusId) return new ApiResponse(400, null, t("STATUSID_IS_REQUIRED", req.language || "en") as string);
+        if (!statusId) return new ApiResponse(400, null, "Status ID is required");
 
+        if (!mongoose.Types.ObjectId.isValid(statusId)) return new ApiResponse(400, null, "Invalid status id");
         const viewedAt = timestamp ? new Date(timestamp as string) : new Date();
-        const statusObjectId = new mongoose.Types.ObjectId(statusId);
 
-        const story = await ChatStatus.findById(statusObjectId);
-        if (!story) return new ApiResponse(404, null, t("STORY_NOT_FOUND", req.language || "en") as string);
-
-        const alreadyViewed = story.viewers?.some((v: any) => v.phone.toString() === req.user.phone.toString());
-        if (!alreadyViewed) {
-            await ChatStatus.findByIdAndUpdate(
-                statusObjectId,
-                { $push: { viewers: { phone: req.user.phone, viewedAt } } },
-                { new: true }
-            );
+        // One atomic write: added only if this viewer isn't in the list yet
+        const { matchedCount } = await ChatStatus.updateOne(
+            { _id: statusId, "viewers.phone": { $ne: req.user.phone } },
+            { $push: { viewers: { phone: req.user.phone, viewedAt } } },
+        );
+        if (!matchedCount && !(await ChatStatus.exists({ _id: statusId }))) {
+            return new ApiResponse(404, null, "Story not found");
         }
 
-        return new ApiResponse(200, null, t("MARKED_AS_VIEWED", req.language || "en") as string);
+        return new ApiResponse(200, null, "Marked as viewed");
     }
     catch {
-        return new ApiResponse(500, null, t("SERVER_ERROR", req.language || "en") as string);
+        return new ApiResponse(500, null, "Server error");
     }
 });
 
 // user set status privecy
 export const statusPrivecy = asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) return new ApiResponse(401, null, t("USER_NOT_FORUND", req.language || "en") as string);
+    if (!req.user) return new ApiResponse(401, null, "User not found");
 
     try {
         const { phoneNumbers, type } = req.body;
-        if (!phoneNumbers || !type) return new ApiResponse(400, null, t("PHONENUMBERS_AND_TYPE_IS_REQUIRED", req.language || "en") as string);
-        if (!Array.isArray(phoneNumbers) || phoneNumbers?.length < 1) return new ApiResponse(400, null, t("PHONE_NUMBER_MUST_BE_ATLEAST_1", req.language || "en") as string);
+        if (!phoneNumbers || !type) return new ApiResponse(400, null, "Phone numbers and type are required");
+        if (!Array.isArray(phoneNumbers) || phoneNumbers?.length < 1) return new ApiResponse(400, null, "At least 1 phone number is required");
 
         const userId = req.user.phone?.toString();
         let tempObj: Record<string, any> = {
@@ -220,26 +219,26 @@ export const statusPrivecy = asyncHandler(async (req: Request, res: Response) =>
             { new: true, upsert: true }
         );
 
-        return new ApiResponse(200, status, t("STATUS_PRIVECY_UPDATED_SUCCEFULLY", req.language || "en") as string);
+        return new ApiResponse(200, status, "Status privacy updated successfully");
     }
     catch {
-        return new ApiResponse(500, null, t("SERVER_ERROR", req.language || "en") as string);
+        return new ApiResponse(500, null, "Server error");
     }
 
 });
 
 // get user status privecy
 export const getStatusPrivecy = asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) return new ApiResponse(401, null, t("USER_NOT_FORUND", req.language || "en") as string);
+    if (!req.user) return new ApiResponse(401, null, "User not found");
 
     try {
         const status = await StatusPrivacy.findOne(
             { userId: req.user.phone?.toString() }
         ).select('-_id -__v').lean();
-        return new ApiResponse(200, status, t("STATUS_PRIVECY_FETCH_SUCCEFULLY", req.language || "en") as string);
+        return new ApiResponse(200, status, "Status privacy fetched successfully");
     }
     catch {
-        return new ApiResponse(500, null, t("SERVER_ERROR", req.language || "en") as string);
+        return new ApiResponse(500, null, "Server error");
     }
 
 });

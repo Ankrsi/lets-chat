@@ -1,0 +1,57 @@
+# Builds and runs the four backend services.
+#   docker compose up -d --build        build images and start
+#   docker compose logs -f <service>    follow one service's logs
+#
+# Docker Hub: all four images share ONE repository (<DOCKER_USER>/lets-chat), one tag per
+# service (auth-v1, conversation-v1, e2e-v1, fcm-v1), so it fits the free plan's single
+# private repository:
+#   docker login
+#   DOCKER_USER=<your-username> TAG=v1 docker compose build
+#   DOCKER_USER=<your-username> TAG=v1 docker compose push
+#
+# Each service reads its own .env (env_file). Only the URLs the services use to call each
+# other are overridden here: inside Docker, "localhost" is the container itself, so they use
+# the compose service names instead.
+#
+# MongoDB, Redis/Valkey and Kafka are external (hosted); their URLs come from the .env files.
+
+services:
+  auth-service:
+    build: ./auth-service
+    image: ${DOCKER_USER:-lets-chat}/lets-chat:auth-${TAG:-latest}
+    env_file: ./auth-service/.env
+    environment:
+      CONVERSATION_SERVICE_BASE_URL: http://conversation-service:4021
+    ports:
+      - "4008:4008"
+    restart: unless-stopped
+
+  conversation-service:
+    build: ./conversation-service
+    image: ${DOCKER_USER:-lets-chat}/lets-chat:conversation-${TAG:-latest}
+    env_file: ./conversation-service/.env
+    environment:
+      AUTH_SERVICE_BASE_URL: http://auth-service:4008
+      FCM_SERVICE_BASE_URL: http://fcm-service:4019
+    ports:
+      - "4021:4021"   # HTTP API
+      - "4022:4022"   # Socket.IO
+      # Group calls (mediasoup) need UDP 10000-20000 reachable from phones. Publishing that many
+      # ports through Docker is slow; on a Linux server use `network_mode: host` for this service.
+    restart: unless-stopped
+
+  end-to-end-service:
+    build: ./end-to-end-service
+    image: ${DOCKER_USER:-lets-chat}/lets-chat:e2e-${TAG:-latest}
+    env_file: ./end-to-end-service/.env
+    ports:
+      - "4025:4025"
+    restart: unless-stopped
+
+  fcm-service:
+    build: ./fcm-service
+    image: ${DOCKER_USER:-lets-chat}/lets-chat:fcm-${TAG:-latest}
+    env_file: ./fcm-service/.env
+    ports:
+      - "4019:4019"
+    restart: unless-stopped

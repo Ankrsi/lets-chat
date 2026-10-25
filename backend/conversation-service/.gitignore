@@ -1,8 +1,12 @@
 # Dependency directories
 node_modules/
 dist/
-# Environment variables
+# Environment variables (.env plus profiles like .env.aiven; examples are committed)
 .env
+.env.*
+!.env.*.example
+# Kafka TLS certificates (ca.pem, service.cert, service.key)
+/certs
 # IDE files
 .vscode/
 .idea/

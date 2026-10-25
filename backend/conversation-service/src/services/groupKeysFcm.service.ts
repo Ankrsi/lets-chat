@@ -1,5 +1,4 @@
 import axios from "axios";
-// import { IChatMessage } from "../kafka/chatConsumer";
 
 export const groupKeysNotification = async (receiverId: string, fcmPayload: any) => {
   try {

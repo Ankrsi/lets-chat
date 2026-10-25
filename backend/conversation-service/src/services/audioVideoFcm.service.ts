@@ -1,5 +1,4 @@
 import axios from "axios";
-// import { IChatMessage } from "../kafka/chatConsumer";
 
 export interface IChatMessage {
   messageId?: string,
@@ -58,12 +57,9 @@ export const sendAudioVideoFCMNotification = async (receiverId: string, message:
     const title = `${message.fromm}`;
     const body = `Incomming ${message.messageType} call`
 
-    // const expiresIn = (seconds: number) => String(Math.floor(Date.now() / 1000) + seconds);
-
     // prepare payloads
     const payloads = uniqueTokens.map((token) => ({
       token,
-      // notification: { title, body },
       data: {
         screen: `${message.messageType}_screen`,
         type: `${message.messageType}_call`,
@@ -83,16 +79,8 @@ export const sendAudioVideoFCMNotification = async (receiverId: string, message:
         app_code,
         role,
       },
-      // android: { priority: "high", ttl: 30000 }, // for 30 sec
       android: { priority: "high", ttl: 0 }, // for 30 sec
       apns: {
-        // headers: {
-        //   "apns-priority": "10", 
-        //   "apns-push-type": "voip", 
-        //   "apns-topic": "com.superapp.NGApp.voip" 
-        // },
-        // headers: { "apns-priority": "10", "apns-expiration": String(Math.floor(Date.now() / 1000) + 30) }, // for 30 sec
-        // headers: { "apns-priority": "10", "apns-expiration": expiresIn(30) }, // for 30 sec
         headers: { "apns-priority": "10", "apns-expiration":"0" }, // for 0 sec
         payload: {
           aps: {

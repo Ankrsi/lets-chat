@@ -1,10 +1,7 @@
-// import messaging from "../config/firebaseConfig";
 import { BatchResponse, WebpushConfig } from "firebase-admin/messaging";
 import admin from "../config/firebase";
 
 const messaging = admin.messaging();
-export type DataPayload = { [key: string]: string };
-export type NotificationPayload = { title?: string; body?: string };
 
 function stringifyData(data: any = {}): Record<string, string> {
   const result: Record<string, string> = {};
@@ -14,16 +11,6 @@ function stringifyData(data: any = {}): Record<string, string> {
       typeof value === "string" ? value : JSON.stringify(value);
   }
   return result;
-}
-
-export async function sendToDevice(
-  token: string,
-  data: DataPayload,
-  notification?: NotificationPayload,
-) {
-  const message: any = { token, data };
-  if (notification) message.notification = notification;
-  return messaging.send(message);
 }
 
 interface FCMMessagesParams {

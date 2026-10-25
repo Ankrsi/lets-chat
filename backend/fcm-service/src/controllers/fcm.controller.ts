@@ -3,11 +3,6 @@ import { sendMessageToDevice, sendToDevices } from "../utils/fcmSender";
 import { asyncHandler } from "../utils/asyncHandler";
 import { sendVoipsToDevice, sendVoipToDevice } from "../utils/voipSender";
 import { ApiResponse } from "../utils/apiResponse";
-import axios from "axios";
-
-// const authServiceBaseURL = process.env.AUTH_SERVICE_BASE_URL!;
-const EventServiceBaseURL = process.env.EVENT_SERVICE_BASE_URL!;
-const internalApiKey = process.env.INTERNAL_API_KEY!;
 
 export const sendNotification = asyncHandler(async (req: Request, res: Response) => {
   const { token, notification, data, device_type, android, apns } = req.body;
@@ -18,8 +13,8 @@ export const sendNotification = asyncHandler(async (req: Request, res: Response)
 
   try {
     if (device_type == 'ios' &&
-      ['audio_screen', 'video_screen', 'group_audio_screen', 'group_video_screen', 'taxi_audio_screen'].includes(data.screen) &&
-      ['audio_call', 'video_call', 'taxi_audio_call', 'group_audio_call', 'group_video_call'].includes(data.type)) {
+      ['audio_screen', 'video_screen', 'group_audio_screen', 'group_video_screen'].includes(data.screen) &&
+      ['audio_call', 'video_call', 'group_audio_call', 'group_video_call'].includes(data.type)) {
 
       const result = await sendVoipToDevice({
         token,
@@ -75,8 +70,8 @@ export const sendMultiNotification = asyncHandler(async (req: Request, res: Resp
 
   try {
     if (device_type == 'ios' &&
-      ['audio_screen', 'video_screen', 'taxi_audio_screen'].includes(data.screen) &&
-      ['audio_call', 'video_call', 'taxi_audio_call'].includes(data.type)) {
+      ['audio_screen', 'video_screen'].includes(data.screen) &&
+      ['audio_call', 'video_call'].includes(data.type)) {
 
       const result = await sendVoipsToDevice({
         tokens,
@@ -106,30 +101,6 @@ export const sendMultiNotification = asyncHandler(async (req: Request, res: Resp
         apns,
         webpush
       });
-
-      if (result.failedTokens.length > 0) {
-        setImmediate(async () => {
-          try {
-            // await axios.post(
-            //   `${authServiceBaseURL}/api/v1/profile/remove-fcm-token`,
-            //   {
-            //     users: [
-            //       { user_id, phone: receiverPhone, tokens: result.failedTokens }
-            //     ]
-            //   },
-            //   { headers: { "x-internal-api-key": internalApiKey } },
-            // );
-            await axios.post(
-              `${EventServiceBaseURL}/api/v1/webhook/fcm-expired`,
-              { user_id, phone: receiverPhone },
-              { headers: { "x-internal-api-key": internalApiKey } },
-            );
-          }
-          catch (err: any) {
-            console.info("fcm notify error: ", err);
-          }
-        })
-      }
       console.info('fcm success', result);
 
       return new ApiResponse(200, {

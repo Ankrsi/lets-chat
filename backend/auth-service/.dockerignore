@@ -1,0 +1,16 @@
+# Never send secrets or local builds into the image
+.env
+.env.*
+certs
+node_modules
+dist
+npm-debug.log*
+*.log
+.git
+.gitignore
+.vscode
+.idea
+Dockerfile
+.dockerignore
+docker-compose*.yml
+docker-soft
