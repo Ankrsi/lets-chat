@@ -1,7 +1,6 @@
 import { currentScreen } from "@/app/_layout";
+import { clearTurnCredentials, refreshTurnCredentials } from "@/utils/turn";
 import { decryptIncomingEdit, decryptIncomingMessage, handleGroupKeyPacket, handleResendRequest, initKey, rotateGroupKey } from "@/utils/e2ee";
-import { registerCallHandlers } from "@/contexts/CallController";
-import { registerGroupCallHandlers } from "@/contexts/groupCallService";
 import { registerGroupVideoCallHandlers } from "@/contexts/groupVideoCallService";
 import { registerVideoCallHandlers } from "@/contexts/videoCallController";
 import { updateAudioStatus } from "@/db/callsRepo";
@@ -53,6 +52,7 @@ export const logout = async () => {
     console.info("logout request failed", err);
   }
   await AsyncStorage.multiRemove(["token", "refreshToken", "userHandle"]);
+  await clearTurnCredentials();
   if (router.canDismiss()) router.dismissAll(); // nothing to dismiss when already at the first screen
   router.navigate('/screens/login');
 };
@@ -341,6 +341,8 @@ export const initializeSocket = async () => {
   if (!token) {
     return null;
   }
+  // Have TURN credentials ready for calls (in the background, doesn't hold up the socket)
+  refreshTurnCredentials().catch(() => undefined);
   try {
     const socketInstance = await getSocket();
     if (!socketInstance) {
@@ -355,9 +357,7 @@ export const initializeSocket = async () => {
 
     const handleConnect = async () => {
       await socketEvents(socketInstance);
-      registerCallHandlers(socketInstance!, username);
       registerVideoCallHandlers(socketInstance!, username);
-      registerGroupCallHandlers(socketInstance!, username);
       registerGroupVideoCallHandlers(socketInstance!, username);
       console.info('Socket connected.');
       setGlobalIsSocketConnected(true);

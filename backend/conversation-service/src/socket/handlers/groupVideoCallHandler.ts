@@ -238,7 +238,7 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
           console.info(e)
         }
         consumers.delete(consumer.id);
-        socket.emit("producerClosed", { producerId });
+        socket.emit("video:producerClosed", { producerId });
       });
 
       cb({

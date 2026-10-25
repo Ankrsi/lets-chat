@@ -18,6 +18,7 @@ import {
   register,
   usernameAvailable,
   verifyOtp,
+  turnCredentials,
   verifyUser as verifyUserController,
 } from "../controllers/auth.controller";
 import { getUsersByPhones } from "../controllers/internal.controller";
@@ -42,6 +43,7 @@ router.post("/register", verifyUser, validate(registerSchema), register);
 router.get("/username-available", verifyUser, validate(usernameQuerySchema, "query"), usernameAvailable);
 router.get("/verify-user", verifyUser, verifyUserController);
 router.post("/logout", verifyUser, logout);
+router.get("/turn-credentials", verifyUser, limit(60), turnCredentials);
 
 /////// internal hooks /////////
 router.post("/get-users-by-phones", verifyInternalRequest, validate(phonesSchema), getUsersByPhones);

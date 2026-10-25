@@ -4,11 +4,12 @@
 //     socket?.on("video:offer", async ({ from, offer }) => {
 
 import { currentScreen } from "@/app/_layout";
+import { getIceServers } from "@/utils/turn";
 import { updateConversationLastMessage } from "@/db/conversationRepo";
 import { saveMessage } from "@/db/messageRepo";
 import * as Crypto from 'expo-crypto';
 import { router } from "expo-router";
-import { DeviceEventEmitter } from "react-native";
+import { Alert, DeviceEventEmitter } from "react-native";
 import InCallManager from "react-native-incall-manager";
 import {
     mediaDevices,
@@ -18,7 +19,13 @@ import {
     RTCSessionDescription,
 } from "react-native-webrtc";
 import type { Socket } from "socket.io-client";
-import { IceCandidatePayload } from "./CallController";
+
+export interface IceCandidatePayload {
+    callId: string;
+    from: string;
+    to?: string;
+    candidate: RTCIceCandidateInit;
+}
 
 export const CallEvents = DeviceEventEmitter;
 
@@ -45,29 +52,11 @@ let currentCallId: string | null = null;
 let currentConversationId: string | null = null;
 let currentCallType: "audio" | "video" = "video";
 
+// ICE servers (Cloudflare TURN, short-lived credentials) come from auth-service: see utils/turn.ts
 const pcConfig: RTCConfiguration = {
-    iceTransportPolicy: "relay",
     bundlePolicy: "max-bundle",
     rtcpMuxPolicy: "require",
     iceCandidatePoolSize: 10,
-    iceServers: [
-        {
-            urls: [
-                "stun:stun.l.google.com:19302",
-                "stun:stun1.l.google.com:19302",
-                "stun:stun2.l.google.com:19302"
-            ]
-        },
-        {
-            urls: [
-                "turn:13.36.13.236:3478?transport=tcp",
-                "turn:13.36.13.236:3478?transport=udp",
-                "turns:omnia.onsdlc.cloud:5349",
-            ],
-            username: "sdlccorp@superapp@eventserverturn",
-            credential: "superappturn1a9k9s7.@sdlccorp.@docker"
-        },
-    ]
 };
 
 export const cleanupPeer = (remoteId: string) => {
@@ -178,7 +167,11 @@ export const createPeer = async (
         console.warn('InCallManager start failed in createPeerConnection', e);
     }
 
-    const pc = new RTCPeerConnection(pcConfig);
+    // Relay through TURN when we have credentials; plain STUN only if the TURN fetch failed
+
+    const { iceServers, hasTurn } = await getIceServers();
+
+    const pc = new RTCPeerConnection({ ...pcConfig, iceServers, iceTransportPolicy: hasTurn ? "relay" : "all" });
 
     peerConnection[to] = {
         pc,
@@ -373,6 +366,14 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         if (currentScreen === "screens/callScreens/videoInCall") {
             router.dismiss();
         }
+    });
+
+    // The person we called is already on another call
+    socket?.on("video:InCall", () => {
+        Object.keys(peerConnection).forEach((u: string) => cleanupPeer(u));
+        peerConnection = {};
+        if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
+        Alert.alert("User is busy", "They're on another call. Try again later.");
     });
 
     socket?.on("video:call-type-changed", async ({ from, type }) => {

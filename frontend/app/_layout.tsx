@@ -182,8 +182,6 @@ function RootLayoutContent() {
               <Stack.Screen name="screens/disappearingMsgs" options={{ title: "Disappearing Msgs", headerShown: false }} />
               <Stack.Screen name="screens/selfDestructingMsgs" options={{ title: "Self Destructing Msgs", headerShown: false }} />
               <Stack.Screen name="screens/shareContact" options={{ title: "Contact to send", headerShown: false }} />
-              <Stack.Screen name="screens/callScreens/incomingCall" options={{ headerShown: false }} />
-              <Stack.Screen name="screens/callScreens/inCall" options={{ headerShown: false }} />
               <Stack.Screen name="screens/callScreens/videoIncomingCall" options={{ headerShown: false }} />
               <Stack.Screen name="screens/callScreens/videoInCall" options={{ headerShown: false }} />
               <Stack.Screen name="screens/statusScreens/statusScreen" options={{ title: "Status", headerShown: false, animation: "none" }} />

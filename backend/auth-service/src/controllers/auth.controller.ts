@@ -7,6 +7,7 @@ import { Session } from "../models/session.model";
 import { checkOtp, consumeOtp, sendOtp } from "../services/otp.service";
 import { createSession, reissueAccessToken, rotateRefreshToken } from "../services/token.service";
 import { notifyNewLogin } from "../services/conversation.service";
+import { generateIceServers } from "../services/turn.service";
 
 const isDuplicateKey = (err: any) => err?.code === 11000;
 
@@ -98,6 +99,15 @@ export const verifyUser = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.user!._id);
   if (!user) throw new ApiError("User not found", 404);
   return new ApiResponse(200, { user: toSelf(user) }, "User verified");
+});
+
+/**
+ * GET /auth/turn-credentials — ICE servers (Cloudflare TURN) for 1:1 calls, with a username and
+ * password that expire after `ttl` seconds. The app fetches them on open and when they run out.
+ */
+export const turnCredentials = asyncHandler(async (req: Request, res: Response) => {
+  const { iceServers, ttl } = await generateIceServers();
+  return new ApiResponse(200, { iceServers, ttl, expiresAt: new Date(Date.now() + ttl * 1000).toISOString() }, "TURN credentials generated");
 });
 
 /** POST /auth/get-new-access-token */

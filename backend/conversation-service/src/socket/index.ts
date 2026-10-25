@@ -60,7 +60,7 @@ const removeFromGroupCall = (socket: Socket) => {
     if (entry.socketId !== socket.id) continue;
     try { entry.producer.close(); } catch (e) { console.error("close producer failed", e); }
     producers.delete(pid);
-    socket.to(entry.conversationId).emit("producerClosed", { producerId: pid });
+    socket.to(entry.conversationId).emit("video:producerClosed", { producerId: pid, userId: entry.userId });
   }
 
   for (const [cid, entry] of consumers) {

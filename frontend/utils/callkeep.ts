@@ -1,44 +1,32 @@
 import { acceptVideoCall, handleIncommingVideoCall, rejectVideoCall } from '@/contexts/videoCallController';
-import { handleAudioIncommingCall, ringtoneTime } from '@/contexts/CallController';
 import inCallManager from 'react-native-incall-manager';
 import notifee, { AndroidCategory, AndroidImportance, AndroidVisibility } from '@notifee/react-native';
-import { handleIncommingGroupAudioCall } from '@/contexts/groupCallService';
 import { handleIncommingGroupVideoCall } from '@/contexts/groupVideoCallService';
 import { getGlobalSocket, getGlobalUsername } from './globalRefs';
+
+const RINGTONE_SECONDS = 25;
+
+// Audio and video calls share one flow (the video handlers); `callType` says "audio" or "video".
+// Older pushes may still say audio_call / group_audio_call, so those are treated the same way.
+const isOneToOne = (type: string) => type == "video_call" || type == "audio_call";
+const isGroup = (type: string) => type == "group_video_call" || type == "group_audio_call";
+const callTypeOf = (data: any): "audio" | "video" =>
+  data?.callType === "audio" || data?.type === "audio_call" || data?.type === "group_audio_call" ? "audio" : "video";
 
 export const handlePickCall = (data: any, socketParam: any, usernameParam: any) => {
   const socket = socketParam || getGlobalSocket();
   const username = usernameParam || getGlobalUsername();
-  if (data.type == "audio_call") {
-    handleAudioIncommingCall({
-      callId: data?.callId,
-      from: data?.fromm,
-      to: data?.to,
-      offer: JSON.parse(data?.offer),
-      offerType: data?.offerType,
-      conversationId: data?.conversationId,
-    });
-  }
-  if (data.type == "video_call") {
+  if (isOneToOne(data.type)) {
     handleIncommingVideoCall({
       socket,
       callId: data?.callId,
       from: data?.fromm,
       to: data?.to,
       conversationId: data?.conversationId,
+      callType: callTypeOf(data),
     })
   }
-  if (data.type == "group_audio_call") {
-    handleIncommingGroupAudioCall({
-      socket,
-      callId: data?.callId,
-      from: data?.fromm,
-      to: data?.to,
-      conversationId: data?.conversationId,
-      myId: username
-    })
-  }
-  if (data.type == "group_video_call") {
+  if (isGroup(data.type)) {
     handleIncommingGroupVideoCall({
       socket,
       callId: data?.callId,
@@ -52,31 +40,20 @@ export const handlePickCall = (data: any, socketParam: any, usernameParam: any) 
 
 export const handleDropCall = (data: any, socketParam: any) => {
   const socket = socketParam || getGlobalSocket();
-  if (data.type == "audio_call") {
-    socket?.emit("call:reject", { callId: data?.callId, from: data?.to, to: data?.fromm });
-  }
-  if (data.type == "video_call") {
+  if (isOneToOne(data.type)) {
     rejectVideoCall(socket!, data?.to, data?.fromm);
   }
 };
 
 export const showIncomingCall = async (data: any) => {
   const socket = getGlobalSocket();
-  if(data.type == "video_call" && data.switchToVideo == "true") {
-    acceptVideoCall(socket!, data?.to, data?.fromm, data?.conversationId, data?.callId, data?.offerType);
+  if (isOneToOne(data.type) && data.switchToVideo == "true") {
+    acceptVideoCall(socket!, data?.to, data?.fromm, data?.conversationId, data?.callId, data?.offerType, callTypeOf(data));
     return;
   }
-  if (data.type == "audio_call" || data.type == "video_call" || data.type == "group_audio_call" || data.type == "group_video_call") {
-    inCallManager.startRingtone('_DEFAULT_', 0, 'default', ringtoneTime);
-    if (data.type == "video_call") {
-      socket?.emit("video:missed-call-timmer", {
-        callId: data?.callId,
-        from: data?.to,
-        to: data?.fromm,
-        conversationId: data?.conversationId,
-        timestamp: new Date()
-      })
-    }
+  if (isOneToOne(data.type) || isGroup(data.type)) {
+    inCallManager.startRingtone('_DEFAULT_', 0, 'default', RINGTONE_SECONDS);
+    // Unanswered calls are timed out by the server (video:start-call), nothing to send here
   }
   await notifee.displayNotification({
     title: `Incoming call ${data.type.split('_').join(" ")}`,

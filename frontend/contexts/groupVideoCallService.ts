@@ -3,7 +3,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from 'expo-crypto';
 import { router } from "expo-router";
 import * as mediasoupClient from "mediasoup-client";
-import { DeviceEventEmitter } from "react-native";
+import { Alert, DeviceEventEmitter } from "react-native";
+import { getGlobalSocket, getGlobalUsername } from "@/utils/globalRefs";
 import InCallManager from "react-native-incall-manager";
 import notifee from '@notifee/react-native';
 import {
@@ -110,6 +111,23 @@ export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): vo
         if (router.canDismiss()) router.dismiss();
       }
     }
+  });
+
+  // A call is already running in this group
+  socket?.on("group:video-InCall", () => {
+    cleanupGroupCall();
+    if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
+    Alert.alert("Call already in progress", "This group already has a call going on.");
+  });
+
+  // The caller hung up before anyone joined: stop ringing here
+  socket?.on("video:callCanceled", async () => {
+    InCallManager.stopRingtone();
+    const notification = JSON.parse(await AsyncStorage.getItem('last_notification') || "{}");
+    await notifee.cancelNotification(notification?.id || "");
+    cleanupGroupCall();
+    const onCallScreen = currentScreen === "screens/callScreens/videoIncomingCall" || currentScreen === "screens/callScreens/videoInCall";
+    if (onCallScreen && router.canDismiss()) router.dismiss();
   });
 
   socket?.on("video:producerClosed", ({ producerId }: { producerId: string }) => {
@@ -516,7 +534,10 @@ export const videoToggleAudio = (): boolean => {
   const audioTrack = (groupVideoLocalStream as any).getAudioTracks()[0];
   if (!audioTrack) return false;
   audioTrack.enabled = !audioTrack.enabled;
-  return !audioTrack.enabled; // returns true if now muted
+  const muted = !audioTrack.enabled;
+  // Let the others in the call show the mute icon
+  getGlobalSocket()?.emit("video:userMuteState", { conversationId: currentConversationId, userId: getGlobalUsername(), muted });
+  return muted; // true if now muted
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

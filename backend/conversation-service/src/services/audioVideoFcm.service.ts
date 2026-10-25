@@ -55,7 +55,9 @@ export const sendAudioVideoFCMNotification = async (receiverId: string, message:
     }
 
     const title = `${message.fromm}`;
-    const body = `Incomming ${message.messageType} call`
+    // Audio and video share the "video" flow, so the text comes from callType
+    const kind = message.callType === "audio" ? "audio" : "video";
+    const body = message.messageType.startsWith("group") ? `Incoming group ${kind} call` : `Incoming ${kind} call`;
 
     // prepare payloads
     const payloads = uniqueTokens.map((token) => ({
