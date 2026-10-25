@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "152920594765",
+    "project_id": "codehex-chats",
+    "storage_bucket": "codehex-chats.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:152920594765:android:243617312cc72f02503f04",
+        "android_client_info": {
+          "package_name": "com.codehex.chats"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCT1gFnOMz9S5POg40BVWrKO1OGNiX8Kpk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
