@@ -1,10 +1,5 @@
 import { Socket } from "socket.io";
 
-/**
- * The payload field that names the sender of each event. The server overwrites it with the
- * phone from the verified JWT, so a client can't act as someone else.
- * (video:accept-call is sent as { from: caller, to: me }, so its sender is `to`.)
- */
 const SENDER_FIELD: Record<string, string> = {
   registerUser: "senderId",
   "chat:join": "username",

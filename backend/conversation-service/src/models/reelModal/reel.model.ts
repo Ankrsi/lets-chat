@@ -3,13 +3,13 @@ import { model, Schema, Types } from "mongoose";
 export interface IReel {
   _id: Types.ObjectId;
   author: string; // phone, same identity the chat uses
-  /** "video" or "image"; reels posted before photo reels existed are videos */
   type: "video" | "image";
   videoUrl: string; // the media URL (kept under this name for existing reels)
   key: string; // object key in the R2 bucket, used to delete the video
   caption: string;
   duration?: number; // seconds, as reported by the uploader
-  size: number; // bytes, read from R2 when the reel was published
+  size: number; // bytes, read from R2 when the reel was published (all photos together)
+  photos?: { url: string; key: string; size: number }[];
   // Kept on the reel (updated with $inc) so feeds never count likes/comments
   likeCount: number;
   commentCount: number;
@@ -27,6 +27,10 @@ const reelSchema = new Schema<IReel>(
     caption: { type: String, trim: true, default: "" },
     duration: { type: Number },
     size: { type: Number, required: true },
+    photos: {
+      type: [{ _id: false, url: { type: String, required: true }, key: { type: String, required: true }, size: { type: Number, required: true } }],
+      default: undefined,
+    },
     likeCount: { type: Number, default: 0, min: 0 },
     commentCount: { type: Number, default: 0, min: 0 },
     shareCount: { type: Number, default: 0, min: 0 },

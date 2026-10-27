@@ -11,16 +11,12 @@ interface Props {
     message?: string;
     icon?: IconName;
     confirmLabel: string;
-    /** null hides the cancel button (a notice with one action) */
     cancelLabel?: string | null;
-    /** Red confirm button (delete, unfollow…) */
     destructive?: boolean;
-    /** May be async: the dialog shows a spinner and stays open until it finishes */
     onConfirm: () => void | Promise<void>;
     onCancel: () => void;
 }
 
-/** Themed confirm dialog, used instead of the plain system alert. */
 export default function ConfirmDialog({
     visible, title, message, icon, confirmLabel, cancelLabel = "Cancel", destructive, onConfirm, onCancel,
 }: Props) {

@@ -8,7 +8,6 @@ import AllFriendsContact from "../../models/contactModal/allFriendsContact.model
 import { redisPublisher } from "../../redis/redisClient";
 import { ChatStatus } from "../../models/chatModal/status.modal";
 
-
 // add image/video status
 export const addStatus = asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) return new ApiResponse(401, null, "User not found");

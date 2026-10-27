@@ -179,10 +179,6 @@ const CACHE_TTL = 10 * 60;
 const membersKey = (convId: any) => `convMembers:${convId}`;
 const userConvsKey = (phone: any) => `userConvs:${phone}`;
 
-/**
- * Conversation members. Called for every message, receipt and reaction, so it's cached in Redis
- * and only read from Mongo on a miss; membership changes clear it (forgetMembership).
- */
 export const getConversationMembers = async (convId: any): Promise<string[]> => {
   const cached = await redisClient.get(membersKey(convId));
   if (cached) return JSON.parse(cached);
@@ -193,7 +189,6 @@ export const getConversationMembers = async (convId: any): Promise<string[]> => 
   return members;
 };
 
-/** Ids of the conversations a user is in (cached), e.g. to tell them about presence changes. */
 export const getUserConversationIds = async (phone: string): Promise<string[]> => {
   const cached = await redisClient.get(userConvsKey(phone));
   if (cached) return JSON.parse(cached);
@@ -203,7 +198,6 @@ export const getUserConversationIds = async (phone: string): Promise<string[]> =
   return ids;
 };
 
-/** Clears cached membership after members join or leave. */
 const forgetMembership = (convId: any, phones: any[]) =>
   redisClient.del([membersKey(convId), ...phones.map((p) => userConvsKey(p))]);
 
@@ -752,7 +746,6 @@ export const contactsRefrashController = asyncHandler(async (req: Request, res: 
   return new ApiResponse(200, null, "contact updated successfully.");
 });
 
-/** Display details for these phones (one auth-service call), in the same order. */
 const getUserInfoFun = async (phones: string[]) => {
   const users = await getUsersByPhones(phones);
   const userMap = new Map(users.map((user: any) => [String(user.phone), user]));
@@ -774,7 +767,6 @@ const getUserInfoFun = async (phones: string[]) => {
 const notifyNewConversation = (io: any, members: any[], me: any, data: any) =>
   notifyMembers({ io, members: members.filter((m) => m != me), event: "chat:otherCreateConversation", data, offlineType: "createConversation" });
 
-/** Replaces the cached blocked set used to drop messages from blocked senders. */
 const cacheBlocked = async (phone: any, blocked: any[]) => {
   const key = `blocked:phones:${phone}`;
   const tx = redisClient.multi().del(key);

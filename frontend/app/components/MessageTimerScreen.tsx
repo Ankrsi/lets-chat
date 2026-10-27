@@ -19,16 +19,13 @@ interface Props {
     heading: string;
     description: string;
     options: TimerOption[];
-    /** Reads the saved duration ("0s" / "off" = off) from the local DB */
     load: (id: string) => Promise<string | null | undefined>;
-    /** Saves the duration locally once the server accepted it */
     save: (id: string, value: string) => Promise<unknown>;
     endpoint: string;
 }
 
 const OFF = "0s";
 
-/** Shared screen for the disappearing and self-destructing message timers. */
 export default function MessageTimerScreen({ title, icon, heading, description, options, load, save, endpoint }: Props) {
     const { dbTick } = useDbUpdate();
     const { id } = useLocalSearchParams();

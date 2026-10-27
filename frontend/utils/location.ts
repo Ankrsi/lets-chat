@@ -8,7 +8,6 @@ export interface SharedLocation {
   address: string | null;
 }
 
-/** Asks for location permission and checks location services. Shows the reason when it can't continue. */
 export async function ensureLocationAccess(): Promise<boolean> {
   let perm = await Location.getForegroundPermissionsAsync();
   if (perm.status !== "granted" && perm.canAskAgain) perm = await Location.requestForegroundPermissionsAsync();
@@ -32,7 +31,6 @@ export async function ensureLocationAccess(): Promise<boolean> {
 const withTimeout = <T,>(promise: Promise<T>, ms: number, fallback: T) =>
   Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
-/** Current position (falls back to the last known one) plus a readable address when available. */
 export async function getCurrentLocation(): Promise<SharedLocation> {
   const fresh = await withTimeout(
     Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null),
@@ -45,7 +43,6 @@ export async function getCurrentLocation(): Promise<SharedLocation> {
   return { lat, lng, accuracy: accuracy ?? null, address: await addressFor(lat, lng) };
 }
 
-/** Readable address from the phone's own geocoder (best effort, no API key). */
 export async function addressFor(lat: number, lng: number): Promise<string | null> {
   try {
     const [place] = await withTimeout(Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }), 4000, []);
@@ -57,7 +54,6 @@ export async function addressFor(lat: number, lng: number): Promise<string | nul
   }
 }
 
-/** Distance in metres between two points (haversine). */
 export const distanceMetres = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
   const R = 6371000;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;

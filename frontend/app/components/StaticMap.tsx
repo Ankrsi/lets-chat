@@ -8,9 +8,6 @@ export const TILE = 256;
 // OpenStreetMap's tile policy asks apps to identify themselves; tiles are also cached on disk
 const TILE_HEADERS = { "User-Agent": "LetsChat/1.0 (chat app location preview)" };
 
-/* ---------------- Web Mercator ---------------- */
-
-/** Position in global pixels at a zoom level. */
 export const toPixel = (lat: number, lng: number, zoom: number) => {
   const scale = TILE * 2 ** zoom;
   const sin = Math.sin((lat * Math.PI) / 180);
@@ -20,7 +17,6 @@ export const toPixel = (lat: number, lng: number, zoom: number) => {
   };
 };
 
-/** Global pixels back to coordinates. */
 export const fromPixel = (x: number, y: number, zoom: number) => {
   const scale = TILE * 2 ** zoom;
   const lng = (x / scale) * 360 - 180;
@@ -31,27 +27,17 @@ export const fromPixel = (x: number, y: number, zoom: number) => {
 
 const metresPerPixel = (lat: number, zoom: number) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
 
-/* ---------------- map ---------------- */
-
 interface Props {
-  /** Map centre */
   lat: number;
   lng: number;
   width: number;
   height: number;
   zoom?: number;
-  /** Red pin at the centre (the location being shown or picked) */
   centerPin?: boolean;
-  /** Blue "you are here" dot with an accuracy circle */
   userLocation?: { lat: number; lng: number; accuracy?: number | null } | null;
-  /** Shown instead of the map when tiles can't load (offline, blocked) */
   fallback?: React.ReactNode;
 }
 
-/**
- * A real map without a native map module: the OpenStreetMap tiles around the centre,
- * positioned in pixels, with markers on top.
- */
 export default function StaticMap({ lat, lng, width, height, zoom = 16, centerPin = true, userLocation, fallback }: Props) {
   const [failed, setFailed] = useState(false);
   if (failed && fallback) return <>{fallback}</>;

@@ -8,13 +8,10 @@ import React, { useState } from "react";
 import { ActivityIndicator, Alert, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface Props {
-  /** Message content: { name, phone, profile } */
   content: any;
-  /** Long press on the card (message options) */
   onLongPress?: () => void;
 }
 
-/** A shared contact in a chat bubble, with Message and Call actions. */
 export default function ContactCard({ content, onLongPress }: Props) {
   const router = useRouter();
   const [opening, setOpening] = useState(false);

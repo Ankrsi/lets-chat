@@ -4,10 +4,6 @@ import jwt from "jsonwebtoken";
 
 const publicKey = () => process.env.JWT_PUBLIC_KEY!.replace(/\\n/g, "\n");
 
-/**
- * Per user, not per IP: many mobile users share one carrier IP. Requests without a valid
- * token fall back to their IP. Internal service calls are not limited.
- */
 const userKey = (req: Request) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
   if (token) {

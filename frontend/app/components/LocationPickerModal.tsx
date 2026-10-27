@@ -17,10 +17,6 @@ interface Props {
 const MIN_ZOOM = 3;
 const MAX_ZOOM = 19;
 
-/**
- * WhatsApp-style "Send location": a draggable map (pin fixed in the centre), your position as a
- * blue dot, and two choices — your current location, or the place you moved the map to.
- */
 export default function LocationPickerModal({ visible, onClose, onSend }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();

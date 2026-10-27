@@ -54,7 +54,6 @@ import { offlineMsgStoreApi } from "@/utils/socket";
 import { takePrefetchedRoom } from "@/utils/roomPrefetch";
 import { encryptOutgoingEdit, encryptOutgoingMessage, hasSecureChat, refreshPeerBundle } from "@/utils/e2ee";
 
-
 /* ── Message row (module scope: a component defined inside ChatScreen would get a new
    identity on every render, remounting every message and reloading its media) ── */
 
@@ -133,7 +132,6 @@ const parseContent = (item: any): Record<string, any> => {
   try { return JSON.parse(item.content) ?? {}; } catch { return {}; }
 };
 
-/** The text of a text message (or a caption), for copy / edit. */
 const readMessageText = (item: any): string => {
   const c = parseContent(item);
   const caption = Array.isArray(c.caption) ? c.caption.filter(Boolean).join("\n") : c.caption;
@@ -152,7 +150,6 @@ const PREVIEW_ICONS: Record<string, { icon: React.ComponentProps<typeof Ionicons
   video_call: { icon: "videocam-outline", label: "Video call" },
 };
 
-/** One-line summary of a message for the options sheet. */
 const messagePreview = (item: any) => {
   const known = PREVIEW_ICONS[item?.messageType];
   const c = parseContent(item);
@@ -391,7 +388,6 @@ const MessageRow = React.memo(
     return true;
   },
 );
-
 
 export default function ChatScreen() {
   const { dbTick } = useDbUpdate();
@@ -661,7 +657,6 @@ export default function ChatScreen() {
     return started;
   };
 
-  /** Stops recording (waiting for start if the finger was quick). Null when nothing usable was recorded. */
   const stopRecording = async (): Promise<{ uri: string; duration: number } | null> => {
     const started = await (recording.current.started ?? Promise.resolve(false));
     recording.current.started = null;
@@ -812,11 +807,6 @@ export default function ChatScreen() {
     }
   };
 
-  /**
-   * Uploads everything in the preview, then sends it.
-   * Images/videos without captions go as one grouped message (as before);
-   * captioned ones go one per message so each caption stays with its file. Documents: one each.
-   */
   const sendMedia = async () => {
     const items = pendingMedia;
     const caps = captions.map((c) => (c || "").trim());
@@ -933,7 +923,6 @@ export default function ChatScreen() {
       address: loc.address,
     }, roomInfo);
   };
-
 
   // Upload voice
   const sendVoiceNote = async (uri: string, duration: number) => {
@@ -1084,7 +1073,6 @@ export default function ChatScreen() {
   // Long press selects the message; the ⋮ in the header then opens its options.
   const handleLongPress = (item: any) => setSelectedItem(item);
 
-  /** Closes the options sheet; the selection stays unless the action is done with it. */
   const closeActions = (clear = false) => {
     setShowActions(false);
     if (clear) clearSelection();
@@ -1270,7 +1258,6 @@ export default function ChatScreen() {
     },
   }), []);
 
-  // ── Header content ──
   const compact = screenWidth < 380; // small phones: smaller controls so the name has room
   const H = {
     bar: [RoomHeaderStyles.bar, compact && RoomHeaderStyles.barCompact],
@@ -1318,7 +1305,6 @@ export default function ChatScreen() {
           )}
           <View style={H.bar}>
             {selectedMsgs.length > 0 ? (
-              // ── Selection mode: what's selected + actions on it ──
               <>
                 <TouchableOpacity style={H.iconBtn} onPress={() => { clearSelection(); setIsEdit(false); }} hitSlop={8}>
                   <Ionicons name="close" size={iconSize} color={colors.text} />

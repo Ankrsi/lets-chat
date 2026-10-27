@@ -33,16 +33,11 @@ export const consumers = new Map();
 
 const JWT_PUBLIC_KEY = () => process.env.JWT_PUBLIC_KEY!.replace(/\\n/g, "\n");
 
-/**
- * Someone came online or went offline: only people with one of their chats open need to know
- * (they're in that conversation's room), so emit to those rooms instead of to every socket.
- */
 const announcePresence = async (io: Server, phone: string) => {
   const rooms = await getUserConversationIds(phone);
   if (rooms.length) io.to(rooms).emit("chat:updateStatusList");
 };
 
-/** Closes a disconnected socket's mediasoup transports, producers and consumers. */
 const removeFromGroupCall = (socket: Socket) => {
   const conversationId = socket.data.conversationId;
   const ut = userTransports.get(socket.id);
@@ -150,8 +145,6 @@ export const startSocketServer = async (app: Express) => {
       }
     });
   });
-
-  // ── Cross-instance events (Redis pub/sub). claimOnce makes sure one instance handles each. ──
 
   // New message: live to every socket the members have, and always queued (the app acks it)
   await redisSubscriber.subscribe("chat", async (msg) => {

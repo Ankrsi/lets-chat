@@ -19,12 +19,12 @@ const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 const MAX_PHOTO_BYTES = 100 * 1024 * 1024;
 const MAX_SECONDS = 3 * 60;
 const MAX_CAPTION = 2200;
+const MAX_PHOTOS = 10;
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm", "video/3gpp"];
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
 
 type PickedMedia = { kind: "video" | "image"; uri: string; mimeType: string; duration: number | null; size: number | null };
 
-/** A problem with the picked file (or the upload), shown in the themed dialog */
 type Notice = {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   title: string;
@@ -42,10 +42,6 @@ const guessMimeType = (asset: ImagePicker.ImagePickerAsset) => {
   return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "heic" ? "image/heic" : "image/jpeg";
 };
 
-/**
- * Looping preview of the picked video, with sound (tap the speaker to mute). If the device
- * can't play the file, a still frame shows instead.
- */
 function VideoPreview({ uri }: { uri: string }) {
   const [thumb, setThumb] = useState<VideoThumbnail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -112,9 +108,38 @@ function VideoPreview({ uri }: { uri: string }) {
   );
 }
 
+function PhotosPreview({ uris }: { uris: string[] }) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [index, setIndex] = useState(0);
+  return (
+    <View style={StyleSheet.absoluteFill} onLayout={(e) => setSize(e.nativeEvent.layout)}>
+      {size.width > 0 && (
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / size.width))}
+        >
+          {uris.map((uri) => (
+            <Image key={uri} source={{ uri }} style={{ width: size.width, height: size.height, borderRadius: 16 }} contentFit="cover" />
+          ))}
+        </ScrollView>
+      )}
+      {uris.length > 1 && (
+        <View style={styles.counter} pointerEvents="none">
+          <Text style={styles.counterText}>{index + 1}/{uris.length}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function UploadReelScreen() {
   const router = useRouter();
-  const [media, setMedia] = useState<PickedMedia | null>(null);
+  // One video, or 1–10 photos posted together
+  const [media, setMedia] = useState<PickedMedia[]>([]);
+  const first = media[0] ?? null;
+  const isVideo = first?.kind === "video";
   const [caption, setCaption] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
   const [phase, setPhase] = useState<"optimizing" | "uploading">("uploading");
@@ -141,12 +166,33 @@ export default function UploadReelScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images", "videos"],
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_PHOTOS,
+      orderedSelection: true,
       videoMaxDuration: MAX_SECONDS,
       quality: 0.9,
     });
-    const asset = result.canceled ? null : result.assets?.[0];
-    if (!asset) return;
+    const assets = result.canceled ? [] : result.assets ?? [];
+    if (!assets.length) return;
+    if (assets.length > 1 && assets.some((a) => a.type === "video")) {
+      setNotice({
+        icon: "albums-outline",
+        title: "One video at a time",
+        message: `Post one video, or up to ${MAX_PHOTOS} photos together.`,
+        action: "pick",
+      });
+      return;
+    }
+    const picked: PickedMedia[] = [];
+    for (const asset of assets) {
+      const item = checkAsset(asset);
+      if (!item) return; // checkAsset showed why
+      picked.push(item);
+    }
+    setMedia(picked);
+  };
 
+  const checkAsset = (asset: ImagePicker.ImagePickerAsset): PickedMedia | null => {
     const kind: PickedMedia["kind"] = asset.type === "video" ? "video" : "image";
     const mimeType = guessMimeType(asset);
     if (!(kind === "video" ? VIDEO_TYPES : PHOTO_TYPES).includes(mimeType)) {
@@ -156,7 +202,7 @@ export default function UploadReelScreen() {
         message: kind === "video" ? "Choose an MP4, MOV, WebM or 3GP video." : "Choose a JPG, PNG, WebP or HEIC photo.",
         action: "pick",
       });
-      return;
+      return null;
     }
     // The picker can leave out the size, so read it from the file
     let size = asset.fileSize ?? null;
@@ -175,7 +221,7 @@ export default function UploadReelScreen() {
           : `This photo is ${formatBytes(size)}. Photos can be up to 100 MB.`,
         action: "pick",
       });
-      return;
+      return null;
     }
     const seconds = kind === "video" && asset.duration ? Math.round(asset.duration / 1000) : null; // picker reports ms
     if (seconds && seconds > MAX_SECONDS) {
@@ -185,17 +231,17 @@ export default function UploadReelScreen() {
         message: `This video is ${formatDuration(seconds)} long. Reels can be up to 3:00 — trim it and try again.`,
         action: "pick",
       });
-      return;
+      return null;
     }
-    setMedia({ kind, uri: asset.uri, mimeType, duration: seconds, size });
+    return { kind, uri: asset.uri, mimeType, duration: seconds, size };
   };
 
   const share = async () => {
-    if (!media || uploading) return;
+    if (!first || uploading) return;
     setProgress(0);
     try {
-      let upload = media;
-      if (media.kind === "video" && optimize) {
+      let upload = first;
+      if (isVideo && optimize) {
         setPhase("optimizing");
         // Loaded here so an app build without the native module still opens this screen
         let VideoCompressor: typeof import("react-native-compressor").Video;
@@ -204,13 +250,13 @@ export default function UploadReelScreen() {
         } catch {
           throw new Error("Video optimizing needs the latest app build. Turn off \"Optimize size\" or update the app.");
         }
-        const uri = await VideoCompressor.compress(media.uri, { compressionMethod: "auto" }, (p) => setProgress(Math.round(p * 100)));
+        const uri = await VideoCompressor.compress(first.uri, { compressionMethod: "auto" }, (p) => setProgress(Math.round(p * 100)));
         let size: number | null = null;
         try { size = new File(uri).size || null; } catch { size = null; }
         // Keep the original if compressing didn't make it smaller
-        if (!(media.size && size && size >= media.size)) upload = { ...media, uri, mimeType: "video/mp4", size };
+        if (!(first.size && size && size >= first.size)) upload = { ...first, uri, mimeType: "video/mp4", size };
       }
-      if (upload.size && upload.size > (upload.kind === "video" ? MAX_VIDEO_BYTES : MAX_PHOTO_BYTES)) {
+      if (isVideo && upload.size && upload.size > MAX_VIDEO_BYTES) {
         setProgress(null);
         setNotice({
           icon: "cloud-upload-outline",
@@ -222,7 +268,7 @@ export default function UploadReelScreen() {
       }
       setPhase("uploading");
       setProgress(0);
-      await uploadReel(upload, caption.trim(), setProgress);
+      await uploadReel(isVideo ? [upload] : media, caption.trim(), setProgress, isVideo ? upload.duration : null);
       markFeedStale();
       router.back();
     } catch (err) {
@@ -266,46 +312,46 @@ export default function UploadReelScreen() {
           <TouchableOpacity
             // No rounded clipping once something is picked: on Android the clipped box draws its background
             // over the photo/video inside it. The photo rounds its own corners instead.
-            style={[ReelStyles.uploadPreview, !media && ReelStyles.pickBox, !!media && { borderRadius: 0, overflow: "visible", backgroundColor: "transparent" }]}
+            style={[ReelStyles.uploadPreview, !first && ReelStyles.pickBox, !!first && { borderRadius: 0, overflow: "visible", backgroundColor: "transparent" }]}
             onPress={pickMedia}
             disabled={uploading}
             activeOpacity={0.85}
           >
-            {media?.kind === "video" && <VideoPreview key={media.uri} uri={media.uri} />}
-            {media?.kind === "image" && <Image source={{ uri: media.uri }} style={[StyleSheet.absoluteFill, { borderRadius: 16 }]} contentFit="cover" />}
-            {!media && (
+            {isVideo && <VideoPreview key={first.uri} uri={first.uri} />}
+            {first?.kind === "image" && <PhotosPreview key={media.map((m) => m.uri).join("|")} uris={media.map((m) => m.uri)} />}
+            {!first && (
               <>
                 <View style={{ flexDirection: "row", gap: 14 }}>
                   <Ionicons name="image-outline" size={44} color="#888888" />
                   <Ionicons name="videocam-outline" size={44} color="#888888" />
                 </View>
-                <Text style={ReelStyles.pickText}>Choose a photo or video</Text>
+                <Text style={ReelStyles.pickText}>Choose photos or a video</Text>
                 {/* Two short lines so the hint stays inside the box on narrow phones */}
-                <Text style={[ReelStyles.pickHint, styles.hint]}>Photos up to 100 MB</Text>
+                <Text style={[ReelStyles.pickHint, styles.hint]}>Up to {MAX_PHOTOS} photos · 100 MB each</Text>
                 <Text style={[ReelStyles.pickHint, styles.hint, { marginTop: 2 }]}>Videos up to 3 min · 200 MB</Text>
               </>
             )}
           </TouchableOpacity>
-          {media && !uploading && (
+          {first && !uploading && (
             <TouchableOpacity onPress={pickMedia} style={styles.selectedRow}>
               <Ionicons name="checkmark-circle" size={16} color={colors.success} />
               <Text style={[ReelStyles.pickHint, { marginTop: 0, color: "#CCCCCC" }]}>
-                {media.kind === "video" ? "Video" : "Photo"} selected
-                {media.duration ? `  ·  ${formatDuration(media.duration)}` : ""}
-                {media.size ? `  ·  ${formatBytes(media.size)}` : ""}
+                {isVideo ? "Video" : media.length > 1 ? `${media.length} photos` : "Photo"} selected
+                {first.duration ? `  ·  ${formatDuration(first.duration)}` : ""}
+                {media.every((m) => m.size) ? `  ·  ${formatBytes(media.reduce((sum, m) => sum + (m.size ?? 0), 0))}` : ""}
               </Text>
               <Text style={[ReelStyles.pickHint, { marginTop: 0, color: colors.primaryMuted, fontWeight: "700" }]}>Change</Text>
             </TouchableOpacity>
           )}
 
-          {media?.kind === "video" && (
+          {isVideo && (
             <View style={styles.optimizeRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.optimizeTitle}>Optimize size</Text>
                 <Text style={styles.optimizeSub}>
                   {optimize
                     ? "Compresses to about 720p before upload — faster to post and to watch"
-                    : media.size && media.size > MAX_VIDEO_BYTES
+                    : first.size && first.size > MAX_VIDEO_BYTES
                       ? "Needed for videos over 200 MB"
                       : "Uploads the original quality"}
                 </Text>
@@ -314,11 +360,11 @@ export default function UploadReelScreen() {
                 value={optimize}
                 onValueChange={(on) => {
                   // Turning it off isn't possible for a video that's over the limit
-                  if (!on && media.size && media.size > MAX_VIDEO_BYTES) {
+                  if (!on && first.size && first.size > MAX_VIDEO_BYTES) {
                     setNotice({
                       icon: "cloud-upload-outline",
                       title: "Video too large",
-                      message: `This video is ${formatBytes(media.size)}. Videos over 200 MB have to be optimized.`,
+                      message: `This video is ${formatBytes(first.size)}. Videos over 200 MB have to be optimized.`,
                       action: null,
                     });
                     return;
@@ -356,9 +402,9 @@ export default function UploadReelScreen() {
           )}
 
           <TouchableOpacity
-            style={[ReelStyles.shareBtn, (!media || uploading) && ReelStyles.disabled]}
+            style={[ReelStyles.shareBtn, (!first || uploading) && ReelStyles.disabled]}
             onPress={share}
-            disabled={!media || uploading}
+            disabled={!first || uploading}
           >
             <Text style={ReelStyles.shareText}>Share to followers</Text>
           </TouchableOpacity>
@@ -394,5 +440,15 @@ const styles = StyleSheet.create({
   },
   optimizeTitle: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
   optimizeSub: { color: "#8A8A8A", fontSize: 12, marginTop: 2 },
+  counter: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  counterText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
   selectedRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 10 },
 });

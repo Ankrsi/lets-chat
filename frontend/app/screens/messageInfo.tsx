@@ -42,7 +42,6 @@ const parseJson = (raw: any): any => {
     try { return JSON.parse(raw) ?? {}; } catch { return {}; }
 };
 
-/** "Today, 10:42 AM" / "Yesterday, 9:03 PM" / "12 Mar, 4:15 PM" */
 const formatWhen = (timestamp?: string | null) => {
     if (!timestamp) return "";
     const d = new Date(timestamp);

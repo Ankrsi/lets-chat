@@ -20,7 +20,6 @@ type ImageItem = { url?: string } | string;
 interface Props {
     urls: ImageItem[];
     caption?: any[]; // per-image captions (older messages); new captions render in the bubble
-    /** Long press on the card (message options) */
     onLongPress?: () => void;
 }
 
@@ -72,7 +71,6 @@ const ImageGrid: React.FC<Props> = ({ urls = [], caption = [], onLongPress }) =>
         </TouchableOpacity>
     );
 
-    // ===== 1 IMAGE =====
     if (count === 1) {
         return (
             <>
@@ -87,7 +85,6 @@ const ImageGrid: React.FC<Props> = ({ urls = [], caption = [], onLongPress }) =>
         )
     }
 
-    // ===== 2 IMAGES =====
     if (count === 2) {
         return (
             <>
@@ -106,7 +103,6 @@ const ImageGrid: React.FC<Props> = ({ urls = [], caption = [], onLongPress }) =>
         );
     }
 
-    // ===== 3 IMAGES =====
     if (count === 3) {
         return (
             <>
@@ -127,7 +123,6 @@ const ImageGrid: React.FC<Props> = ({ urls = [], caption = [], onLongPress }) =>
         );
     }
 
-    // ===== 4+ IMAGES =====
     const display = urls.slice(0, 4);
 
     return (

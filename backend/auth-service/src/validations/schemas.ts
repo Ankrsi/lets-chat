@@ -18,8 +18,6 @@ const username = () =>
 
 const name = () => Joi.string().trim().max(50);
 
-/* ---------------- app ---------------- */
-
 export const generateOtpSchema = Joi.object({ phone: phone().required() });
 
 export const verifyOtpSchema = Joi.object({
@@ -56,8 +54,6 @@ export const deviceTokensSchema = Joi.object({
   fcm_token: Joi.string().max(4096).allow(null),
   voip_token: Joi.string().max(4096).allow(null),
 }).min(1);
-
-/* ---------------- internal (service-to-service) ---------------- */
 
 // Other services send phones exactly as they store them, so only reduce to digits here
 // instead of re-validating against libphonenumber.

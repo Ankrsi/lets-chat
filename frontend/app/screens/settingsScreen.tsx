@@ -16,7 +16,6 @@ import { SettingsStyle, styles } from "../styles";
 import { colors } from "@/theme";
 import { logout } from "@/utils/socket";
 
-// ── Types ──────────────────────────────────────────────────────────────────
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
 interface SettingRowProps {
@@ -37,7 +36,6 @@ interface SettingToggleProps {
     onToggle: (v: boolean) => void;
 }
 
-// ── Icon Box ───────────────────────────────────────────────────────────────
 function IconBox({ name, color = colors.primary }: { name: IoniconsName; color?: string }) {
     return (
         <View style={[SettingsStyle.iconBox, { backgroundColor: color + "18" }]}>
@@ -46,7 +44,6 @@ function IconBox({ name, color = colors.primary }: { name: IoniconsName; color?:
     );
 }
 
-// ── Setting Row ────────────────────────────────────────────────────────────
 function SettingRow({
     icon, iconColor = colors.primary, label, value,
     onPress, showArrow = true, danger = false,
@@ -67,7 +64,6 @@ function SettingRow({
     );
 }
 
-// ── Setting Toggle ─────────────────────────────────────────────────────────
 function SettingToggle({ icon, iconColor = colors.primary, label, value, onToggle }: SettingToggleProps) {
     return (
         <View style={SettingsStyle.row}>
@@ -85,7 +81,6 @@ function SettingToggle({ icon, iconColor = colors.primary, label, value, onToggl
     );
 }
 
-// ── Section ────────────────────────────────────────────────────────────────
 function Section({ title, children }: { title?: string; children: React.ReactNode }) {
     return (
         <View style={SettingsStyle.section}>
@@ -99,7 +94,6 @@ function Divider() {
     return <View style={SettingsStyle.divider} />;
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
     const router = useRouter();
     const [info, setInfo] = useState<any>({});

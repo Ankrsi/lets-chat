@@ -73,7 +73,6 @@ function Thumb({ item }: { item: MediaItem }) {
   );
 }
 
-/** One preview screen for images, videos and documents, with a caption per item. */
 export default function MediaPreviewModal({ visible, items, captions, onChangeCaption, onRemove, onClose, onSend }: Props) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);

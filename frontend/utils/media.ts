@@ -2,7 +2,6 @@ import { colors } from "@/theme";
 
 export type MediaKind = "image" | "video" | "document";
 
-/** A file picked for sending, before it's uploaded. */
 export interface MediaItem {
   uri: string;
   kind: MediaKind;
@@ -14,7 +13,6 @@ export interface MediaItem {
 
 export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
-/** Image-picker / camera asset → MediaItem (the picker reports video duration in ms). */
 export const mediaFromPickerAsset = (a: { uri: string; type?: string | null; fileName?: string | null; mimeType?: string | null; fileSize?: number | null; duration?: number | null }): MediaItem => {
   const isVideo = a.type === "video";
   return {
@@ -34,7 +32,6 @@ export const formatBytes = (bytes?: number | null) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-/** Icon, short label and accent color for a document, from its extension (or MIME type). */
 export const documentKind = (name: string, mimeType?: string): { icon: any; label: string; color: string } => {
   const ext = (name.split(".").pop() || "").toLowerCase();
   if (ext === "pdf" || mimeType === "application/pdf") return { icon: "document-text", label: "PDF", color: "#EF4444" };
@@ -47,10 +44,8 @@ export const documentKind = (name: string, mimeType?: string): { icon: any; labe
   return { icon: "document", label: ext ? ext.toUpperCase() : "FILE", color: colors.primary };
 };
 
-/** File name safe for a storage key / URL (the original name is kept for display). */
 export const safeFileName = (name: string) => (name || "file").replace(/[^\w.-]+/g, "_").slice(-120);
 
-/** PUTs a local file to a presigned URL. Resolves only on a 2xx response. */
 export const uploadToPresignedUrl = (uploadUrl: string, item: MediaItem, onProgress?: (fraction: number) => void) =>
   new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

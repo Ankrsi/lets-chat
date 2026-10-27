@@ -14,7 +14,6 @@ const TABS: { key: Tab; label: string; route: string; icon: IoniconsName; active
   { key: "status", label: "Status", route: "/screens/statusScreens/statusScreen", icon: "aperture-outline", activeIcon: "aperture" },
 ];
 
-/** Main navigation. navigate() returns to a tab already in the stack instead of stacking a copy. */
 export default function BottomTabBar({ active }: { active: Tab }) {
   const router = useRouter();
   // The bar pads itself above the system navigation area, so it's the same on every tab.

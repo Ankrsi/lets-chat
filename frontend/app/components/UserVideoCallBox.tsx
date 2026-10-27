@@ -5,7 +5,6 @@ import { RTCView } from "react-native-webrtc";
 const { width, height } = Dimensions.get("window");
 const AVATAR_SIZE = 70;
 
-// ─── Single user box ──────────────────────────────────────────────────────────
 const UserBox = ({ user, boxWidth, boxHeight, isAudio }: any) => {
     const { isSpeaking, isMuted } = user;
 
@@ -81,7 +80,6 @@ const UserBox = ({ user, boxWidth, boxHeight, isAudio }: any) => {
     );
 };
 
-// ─── Grid ─────────────────────────────────────────────────────────────────────
 const UserVideoCallBox = ({ users, speakingUsers = [], mutedUsers = {}, isAudio = false }: {
     users: Array<{ stream: any, name?: String }>;
     speakingUsers?: Array<{ userId: string; volume: number }>;

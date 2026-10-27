@@ -25,11 +25,9 @@ const timeAgo = (iso: string) => {
 interface Props {
   reelId: string | null;
   onClose: () => void;
-  /** Keeps the count on the reel in step with what happens here */
   onCountChange: (reelId: string, count: number) => void;
 }
 
-/** Bottom sheet with a reel's comments: newest first, load more on scroll, write and delete. */
 export default function ReelCommentsSheet({ reelId, onClose, onCountChange }: Props) {
   const insets = useSafeAreaInsets();
 

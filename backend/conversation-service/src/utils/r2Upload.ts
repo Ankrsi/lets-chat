@@ -46,8 +46,6 @@ export const presignedUrlR2 = async (fileName: string, conversationId: string, m
   return { uploadUrl, fileUrl };
 }
 
-/* ---------------- reels ---------------- */
-
 export const REEL_VIDEO_TYPES: Record<string, string> = {
   "video/mp4": "mp4",
   "video/quicktime": "mov",
@@ -79,13 +77,11 @@ export const presignedReelUploadR2 = async (phone: string, mediaType: string) =>
   return { uploadUrl, fileUrl: publicUrl(key), key };
 };
 
-/** Turns a public file URL back into its object key, or null if it isn't in our bucket. */
 export const keyFromPublicUrl = (url: string): string | null => {
   const base = `${process.env.R2_PUBLIC_URL!.replace(/\/+$/, "")}/`;
   return url.startsWith(base) ? decodeURIComponent(url.slice(base.length)) : null;
 };
 
-/** Size and type of an uploaded object, or null if it doesn't exist. */
 export const headR2Object = async (key: string) => {
   try {
     const res = await r2.send(new HeadObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }));

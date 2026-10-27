@@ -18,9 +18,7 @@ import type { Socket } from "socket.io-client";
 // RTCPeerConnection, RTCRtpSender, etc.
 registerGlobals();
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface ConsumerEntry {
   consumerId: string;
@@ -35,9 +33,7 @@ export interface GroupCallIncomingPayload {
   conversationId: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // EXPORTED MUTABLE STATE  (read from UI layer, mutated only inside this file)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export let groupVideoLocalStream: MediaStream | null = null;
 export let speakerState = false;
@@ -53,17 +49,13 @@ let msDevice: mediasoupClient.types.Device | null = null;
 let sendTransport: mediasoupClient.types.Transport | null = null;
 let recvTransport: mediasoupClient.types.Transport | null = null;
 
-// ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL STATE
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Callback the UI layer registers to be notified of consumer list changes
 export const VideoCallEvents = DeviceEventEmitter;
 export const getVideoGroupConsumers = (): ConsumerEntry[] => [...videoGroupCallConsumers];
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SOCKET LISTENERS
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): void => {
   const GROUP_VIDEO_CALL_SOCKET_EVENTS = [
@@ -79,7 +71,6 @@ export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): vo
     socket?.off(sock);
   });
 
-  // ── Incoming call ──────────────────────────────────────────────────────────
   socket?.on(
     "group:video-incoming",
     ({ callId, from, conversationId }: GroupCallIncomingPayload) => {
@@ -94,13 +85,11 @@ export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): vo
     }
   );
 
-  // ── A new participant started producing ────────────────────────────────────
   socket?.on("video:newProducer", async ({ producerId, userId: producerUserId }: { producerId: string; userId: string; }) => {
     if (producerUserId === myId) return;
     await consumeRemote(socket, myId, producerId, producerUserId);
   });
 
-  // ── Participant left ───────────────────────────────────────────────────────
   socket?.on("video:userLeft", async ({ userId: leftUserId }: { userId: string }) => {
     let notification = JSON.parse(await AsyncStorage.getItem('last_notification') || "{}");
     await notifee.cancelNotification(notification?.id || "");
@@ -162,17 +151,13 @@ export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): vo
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // REGISTER USER
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const registerUser = (socket: Socket, userId: string): void => {
   socket?.emit("registerUser", { senderId: userId });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // START CALL NOTIFICATION
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const handleIncommingGroupVideoCall = async ({ socket, callId, from, conversationId, myId }: any) => {
   InCallManager.startRingtone("_DEFAULT_", 0, "default", 25);
@@ -181,9 +166,7 @@ export const handleIncommingGroupVideoCall = async ({ socket, callId, from, conv
   await acceptVideoGroupCall(socket, myId)
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // START CALL  (caller side)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const startGroupVideoCall = async (
   socket: Socket,
@@ -209,9 +192,7 @@ export const startGroupVideoCall = async (
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // JOIN ROOM  (shared by startGroupCall and acceptGroupCall)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const joinRoom = async (
   socket: Socket,
@@ -251,9 +232,7 @@ export const joinRoom = async (
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ACCEPT CALL  (callee side)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const acceptVideoGroupCall = async (
   socket: Socket,
@@ -277,9 +256,7 @@ export const acceptVideoGroupCall = async (
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // REJECT CALL
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const rejectVideoGroupCall = (): void => {
   InCallManager.stopRingtone();
@@ -288,9 +265,7 @@ export const rejectVideoGroupCall = (): void => {
   if (router.canDismiss()) router.dismiss();
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // END CALL
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const endVideoGroupCall = (socket: Socket, myId: string): void => {
   socket?.emit("video:leaveRoom", {
@@ -338,9 +313,7 @@ export const switchCallType = async (socket: Socket, myId: string, callType: "au
   VideoCallEvents.emit("group-video-calltype-changed", { userId: myId, callType });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL: cleanup
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const cleanupGroupCall = (): void => {
   try {
@@ -376,9 +349,7 @@ export const cleanupGroupCall = (): void => {
   console.log("📌 Video Group call state fully reset");
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL: create send transport + produce audio
-// ─────────────────────────────────────────────────────────────────────────────
 
 const createSendTransportAndProduce = async (
   socket: Socket,
@@ -439,9 +410,7 @@ const createSendTransportAndProduce = async (
   console.log("🎙️ Audio producing started");
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL: consume a remote producer
-// ─────────────────────────────────────────────────────────────────────────────
 
 const consumeRemote = async (
   socket: Socket,
@@ -525,9 +494,7 @@ const consumeRemote = async (
   console.log("🔊 Consuming video/audio from:", producerUserId);
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TOGGLE MUTE  (mutes/unmutes local mic track)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const videoToggleAudio = (): boolean => {
   if (!groupVideoLocalStream) return false;
@@ -540,9 +507,7 @@ export const videoToggleAudio = (): boolean => {
   return muted; // true if now muted
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TOGGLE CAMERA  (enables/disables local video track)
-// ─────────────────────────────────────────────────────────────────────────────
 export const videoToggleCamera = (): boolean => {
   if (!groupVideoLocalStream) return false;
   const videoTrack = (groupVideoLocalStream as any).getVideoTracks()[0];

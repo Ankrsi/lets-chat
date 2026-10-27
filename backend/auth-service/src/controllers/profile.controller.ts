@@ -14,12 +14,10 @@ const findMe = async (req: Request) => {
   return user;
 };
 
-/** GET /profile/me */
 export const getMyProfile = asyncHandler(async (req: Request, res: Response) => {
   return new ApiResponse(200, { user: toSelf(await findMe(req)) }, "Profile fetched");
 });
 
-/** PATCH /profile/me — first_name, last_name, about, email */
 export const updateMyProfile = asyncHandler(async (req: Request, res: Response) => {
   const user = await findMe(req);
   const { first_name, last_name, about, email } = req.body;
@@ -34,7 +32,6 @@ export const updateMyProfile = asyncHandler(async (req: Request, res: Response) 
   return new ApiResponse(200, { user: toSelf(user) }, "Profile updated");
 });
 
-/** PATCH /profile/username */
 export const changeUsername = asyncHandler(async (req: Request, res: Response) => {
   const user = await findMe(req);
   const { username } = req.body;
@@ -55,7 +52,6 @@ export const changeUsername = asyncHandler(async (req: Request, res: Response) =
   return new ApiResponse(200, { accessToken, user: toSelf(user) }, "Username updated");
 });
 
-/** PATCH /profile/update-profile-image — multipart field "profile_image" */
 export const updateProfileImage = asyncHandler(async (req: Request, res: Response) => {
   if (!req.file) throw new ApiError("profile_image file is required", 400);
   const user = await findMe(req);
@@ -67,7 +63,6 @@ export const updateProfileImage = asyncHandler(async (req: Request, res: Respons
   return new ApiResponse(200, { user: toSelf(user) }, "Profile image updated");
 });
 
-/** DELETE /profile/profile-image */
 export const removeProfileImage = asyncHandler(async (req: Request, res: Response) => {
   const user = await findMe(req);
   user.profile_image = undefined;
@@ -77,7 +72,6 @@ export const removeProfileImage = asyncHandler(async (req: Request, res: Respons
   return new ApiResponse(200, { user: toSelf(user) }, "Profile image removed");
 });
 
-/** GET /profile/user/:username — look someone up by username to start a chat. */
 export const getUserByUsername = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findOne({ username: req.params.username });
   // Users who blocked the requester look the same as users that don't exist
@@ -85,7 +79,6 @@ export const getUserByUsername = asyncHandler(async (req: Request, res: Response
   return new ApiResponse(200, { user: toPublic(user) }, "User found");
 });
 
-/** PATCH /profile/device-tokens — refresh this device's FCM / VoIP push tokens. null clears one. */
 export const updateDeviceTokens = asyncHandler(async (req: Request, res: Response) => {
   const { fcm_token, voip_token } = req.body;
   const $set: Record<string, string> = {};

@@ -29,10 +29,6 @@ export async function getDeviceId(): Promise<string> {
   return await Application.getIosIdForVendorAsync() ?? 'unknown';
 }
 
-/**
- * Caches the profile locally. Note: "username" has always held the phone number
- * (the chat identity used across the app); the chosen username is "userHandle".
- */
 export async function saveUser(user: AuthUser) {
   await AsyncStorage.multiSet([
     ["username", String(user.phone)],
@@ -89,7 +85,6 @@ export async function syncContacts() {
   }
 }
 
-/** Runs once the user is logged in and registered, then opens the chat list. */
 export async function finishLogin(router: Router) {
   const phone = await AsyncStorage.getItem("username");
   await initKey().catch((err) => console.info("e2ee initKey failed", err));

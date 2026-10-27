@@ -10,7 +10,6 @@ import { beforeCursor, canViewReels, getProfiles } from "../../utils/social";
 const MAX_COMMENT = 500;
 const COMMENT_PAGE = 20;
 
-/** The reel, if it exists and `me` may see it (author or a follower who isn't blocked). */
 const viewableReel = async (id: string, me: string) => {
   if (!Types.ObjectId.isValid(id)) return null;
   const reel = await Reel.findById(id).select("author likeCount commentCount shareCount").lean<IReel>();
@@ -21,7 +20,6 @@ const viewableReel = async (id: string, me: string) => {
 const counts = async (id: Types.ObjectId | string) =>
   Reel.findById(id).select("likeCount commentCount shareCount").lean<Pick<IReel, "likeCount" | "commentCount" | "shareCount">>();
 
-/** POST /reels/:id/like — idempotent: liking twice counts once. */
 export const likeReel = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   const reel = await viewableReel(req.params.id, me);
@@ -38,7 +36,6 @@ export const likeReel = asyncHandler(async (req: Request, res: Response) => {
   return new ApiResponse(200, { liked: true, likeCount: c?.likeCount ?? 0 }, "Liked");
 });
 
-/** DELETE /reels/:id/like — idempotent. */
 export const unlikeReel = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   if (!Types.ObjectId.isValid(req.params.id)) return new ApiResponse(404, null, "Reel not found");
@@ -52,7 +49,6 @@ export const unlikeReel = asyncHandler(async (req: Request, res: Response) => {
   return new ApiResponse(200, { liked: false, likeCount: c?.likeCount ?? 0 }, "Unliked");
 });
 
-/** POST /reels/:id/share — counts a share (the app opens the share sheet). */
 export const shareReel = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   const reel = await viewableReel(req.params.id, me);
@@ -71,7 +67,6 @@ const toComment = (c: IReelComment, profiles: Map<string, any>, me: string, reel
   canDelete: c.author === me || reelAuthor === me,
 });
 
-/** GET /reels/:id/comments?before=<commentId> — newest first. */
 export const getComments = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   const reel = await viewableReel(req.params.id, me);
@@ -89,7 +84,6 @@ export const getComments = asyncHandler(async (req: Request, res: Response) => {
   }, "Comments fetched");
 });
 
-/** POST /reels/:id/comments { text } */
 export const addComment = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
@@ -110,7 +104,6 @@ export const addComment = asyncHandler(async (req: Request, res: Response) => {
   }, "Comment added");
 });
 
-/** DELETE /reels/:id/comments/:commentId — by the comment's author or the reel's author. */
 export const deleteComment = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   const { id, commentId } = req.params;

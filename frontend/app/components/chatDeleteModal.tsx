@@ -5,9 +5,7 @@ import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "reac
 
 interface Props {
     visible: boolean;
-    /** How many messages are being deleted */
     count?: number;
-    /** Only your own messages can be deleted for everyone */
     allowEveryone?: boolean;
     onClose: () => void;
     onDeleteForEveryone: () => void;

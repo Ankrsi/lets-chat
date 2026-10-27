@@ -28,7 +28,6 @@ const fetchCredentials = async (): Promise<Cached | null> => {
   }
 };
 
-/** Called on app open / login: makes sure valid credentials are ready before any call. */
 export const refreshTurnCredentials = async (): Promise<void> => {
   if (!cached) {
     const stored = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
@@ -41,7 +40,6 @@ export const refreshTurnCredentials = async (): Promise<void> => {
   await inFlight;
 };
 
-/** ICE servers for a new call: cached TURN credentials, renewed when close to expiry. */
 export const getIceServers = async (): Promise<{ iceServers: IceServer[]; hasTurn: boolean }> => {
   await refreshTurnCredentials();
   if (usable(cached)) return { iceServers: cached!.iceServers, hasTurn: true };
@@ -49,7 +47,6 @@ export const getIceServers = async (): Promise<{ iceServers: IceServer[]; hasTur
   return { iceServers: STUN_ONLY, hasTurn: false };
 };
 
-/** On logout: forget this user's credentials. */
 export const clearTurnCredentials = async () => {
   cached = null;
   await AsyncStorage.removeItem(STORAGE_KEY).catch(() => undefined);

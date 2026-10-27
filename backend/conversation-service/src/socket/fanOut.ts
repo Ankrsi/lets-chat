@@ -11,23 +11,12 @@ interface FanOut {
   members: (string | number)[];
   event: string;
   data: any;
-  /** What kind of queued delivery this is (the consumer handles it by kind) */
   offlineTopic: string;
-  /**
-   * true: emit to whatever sockets a member has and also queue it for them (chat messages, keys).
-   * false (default): online members get it live, everyone else gets it queued.
-   */
   alwaysQueue?: boolean;
-  /** Extra condition for counting a member as online (e.g. has this chat open) */
   live?: (member: string) => boolean;
-  /** What gets queued for a member (default: the event plus `member`) */
   offlineValue?: (member: string) => any;
 }
 
-/**
- * Delivers an event to conversation members: online flags and sockets fetched together
- * (pipelined), and one Kafka batch for everyone who has to get it later.
- */
 export const fanOut = async ({ io, producer, members, event, data, offlineTopic, alwaysQueue = false, live, offlineValue }: FanOut) => {
   const list = members.map(String);
   if (!list.length) return;

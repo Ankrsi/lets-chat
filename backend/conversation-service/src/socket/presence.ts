@@ -9,10 +9,6 @@ const socketsKey = (phone: string) => `sockets:${phone}`;
 const ownerKey = (socketId: string) => `socketOwner:${socketId}`;
 const onlineKey = (phone: string) => `user:${phone}:online`;
 
-/**
- * Records a connected socket and marks the user online. `replaceOthers` drops their other sockets
- * (accounts are single-device, so a fresh registration replaces whatever was there).
- */
 export const addSocket = async (phone: string, socketId: string, replaceOthers = false) => {
   if (replaceOthers) await redisClient.del(socketsKey(phone));
   await Promise.all([
@@ -23,7 +19,6 @@ export const addSocket = async (phone: string, socketId: string, replaceOthers =
   ]);
 };
 
-/** Forgets a socket. Returns its user, and whether that was their last socket (now offline). */
 export const removeSocket = async (socketId: string): Promise<{ phone: string; offline: boolean } | null> => {
   const phone = await redisClient.get(ownerKey(socketId));
   if (!phone) return null;
@@ -39,6 +34,5 @@ export const removeSocket = async (socketId: string): Promise<{ phone: string; o
 
 export const ownerOf = (socketId: string) => redisClient.get(ownerKey(socketId));
 
-/** Socket ids per phone, in the same order (commands are pipelined, not one round trip each). */
 export const socketsOf = (phones: string[]): Promise<string[][]> =>
   Promise.all(phones.map((p) => redisClient.sMembers(socketsKey(String(p)))));

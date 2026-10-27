@@ -10,12 +10,7 @@ const post = (path: string, data: Record<string, unknown>) =>
     })
     .catch((err) => console.error(`conversation-service ${path} failed:`, err?.response?.data || err.message));
 
-/**
- * logout=false: warn the signed-in device that someone is trying to log in.
- * logout=true:  every device except `deviceId` signs out.
- */
 export const notifyNewLogin = (phone: string, logout: boolean, deviceId: string, appCode: string) =>
   post("notifyNewLogin", { phone, logout, deviceId, app_code: appCode });
 
-/** Tells this user's contacts to refetch their profile (name, photo, username). */
 export const notifyProfileChanged = (phone: string) => post("contactsRefrash", { phone });

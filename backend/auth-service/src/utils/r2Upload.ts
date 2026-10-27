@@ -7,7 +7,6 @@ const EXTENSIONS: Record<string, string> = {
   "image/webp": "webp",
 };
 
-/** Uploads a profile photo and returns its public URL. */
 export const uploadProfileImage = async (userId: string, file: Express.Multer.File): Promise<string> => {
   const key = `profile/${userId}/${Date.now()}.${EXTENSIONS[file.mimetype] ?? "jpg"}`;
   try {

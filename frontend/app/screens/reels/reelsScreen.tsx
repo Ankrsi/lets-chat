@@ -3,7 +3,7 @@ import ReelsPager from "@/app/components/ReelsPager";
 import { ReelStyles } from "@/app/styles";
 import { apiErrorMessage } from "@/utils/api";
 import { getGlobalUsername } from "@/utils/globalRefs";
-import { deleteReel, fetchFeed, Reel, takeFeedStale } from "@/utils/reels";
+import { deleteReel, fetchFeed, fetchSuggested, Reel, takeFeedStale } from "@/utils/reels";
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -12,11 +12,25 @@ import ConfirmDialog from "@/app/components/ConfirmDialog";
 import { ActivityIndicator, Alert, StatusBar, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+type Source = "feed" | "suggested";
+
+const nextPage = async (source: Source, before: string | null): Promise<{ reels: Reel[]; source: Source; cursor: string | null }> => {
+  if (source === "feed") {
+    const page = await fetchFeed(before);
+    if (page.nextCursor) return { reels: page.reels, source, cursor: page.nextCursor };
+    const more = await fetchSuggested().catch(() => ({ reels: [] as Reel[], nextCursor: null }));
+    return { reels: [...page.reels, ...more.reels], source: "suggested", cursor: more.nextCursor };
+  }
+  const page = await fetchSuggested(before);
+  return { reels: page.reels, source, cursor: page.nextCursor };
+};
+
 export default function ReelsScreen() {
   const router = useRouter();
   const focused = useIsFocused();
   const [reels, setReels] = useState<Reel[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [source, setSource] = useState<Source>("feed");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -25,9 +39,10 @@ export default function ReelsScreen() {
 
   const loadFirstPage = useCallback(async () => {
     try {
-      const page = await fetchFeed();
+      const page = await nextPage("feed", null);
       setReels(page.reels);
-      setCursor(page.nextCursor);
+      setSource(page.source);
+      setCursor(page.cursor);
       setError(null);
     } catch (err) {
       setError(apiErrorMessage(err, "Couldn't load reels."));
@@ -54,9 +69,10 @@ export default function ReelsScreen() {
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const page = await fetchFeed(cursor);
+      const page = await nextPage(source, cursor);
       setReels((prev) => [...prev, ...page.reels.filter((r) => !prev.some((p) => p._id === r._id))]);
-      setCursor(page.nextCursor);
+      setSource(page.source);
+      setCursor(page.cursor);
     } catch (err) {
       console.info("load more reels failed", err);
     } finally {
@@ -115,7 +131,7 @@ export default function ReelsScreen() {
           <View style={ReelStyles.empty}>
             <Ionicons name="play-circle-outline" size={64} color="#555555" />
             <Text style={ReelStyles.emptyTitle}>No reels yet</Text>
-            <Text style={ReelStyles.emptySub}>Follow people to see their reels here, or post your first one.</Text>
+            <Text style={ReelStyles.emptySub}>No one has posted yet. Post the first reel, or find people to follow.</Text>
             <TouchableOpacity style={ReelStyles.emptyBtn} onPress={() => router.push("/screens/reels/findPeople")}>
               <Text style={ReelStyles.emptyBtnText}>Find people</Text>
             </TouchableOpacity>

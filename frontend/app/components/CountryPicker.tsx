@@ -5,13 +5,11 @@ import React, { useMemo, useState } from "react";
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** "IN" → 🇮🇳 (regional indicator letters) */
 export const flagOf = (iso: string) =>
   String.fromCodePoint(...iso.toUpperCase().split("").map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 
 export const dialCodeOf = (iso: string) => COUNTRIES.find(([c]) => c === iso)?.[2] ?? "";
 
-/** The device's region (e.g. en-IN → IN), if it's a country we know; else the fallback. */
 export const deviceCountry = (fallback = "IN") => {
   try {
     const locale = Intl.DateTimeFormat().resolvedOptions().locale || "";
@@ -28,7 +26,6 @@ interface Props {
   onChange: (iso: string) => void;
 }
 
-/** Flag + dial code button that opens a searchable country list. */
 export default function CountryPicker({ value, onChange }: Props) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);

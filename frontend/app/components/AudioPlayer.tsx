@@ -14,7 +14,6 @@ const formatTime = (seconds: number) => {
   return `${m}:${String(s).padStart(2, "0")}`;
 };
 
-/** Voice notes ({ url, duration }) and audio files ({ url | urls[0], name }), stored as JSON or object. */
 const readContent = (raw: any) => {
   let c: any = raw;
   if (typeof raw === "string") {

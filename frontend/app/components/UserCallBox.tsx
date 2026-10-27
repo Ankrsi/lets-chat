@@ -4,14 +4,12 @@ import { Animated, Dimensions, Image, StyleSheet, Text, View } from "react-nativ
 const { width, height } = Dimensions.get("window");
 const AVATAR_SIZE = 70;
 
-// ─── Convert dB volume (-70 to 0) → scale (1.0 to 1.6) ──────────────────────
 const volumeToScale = (volume: number): number => {
     const clamped = Math.max(-70, Math.min(0, volume));
     const normalized = (clamped + 70) / 70; // 0.0 (silent) → 1.0 (loud)
     return 1 + normalized * 0.6;            // 1.0 → 1.6
 };
 
-// ─── Single ring driven by real volume ───────────────────────────────────────
 const VolumeRing = ({ volume, delay = 0 }: { volume: number; delay?: number }) => {
     const scale = useRef(new Animated.Value(1)).current;
     const opacity = useRef(new Animated.Value(0)).current;
@@ -52,7 +50,6 @@ const VolumeRing = ({ volume, delay = 0 }: { volume: number; delay?: number }) =
     );
 };
 
-// ─── Single user box ──────────────────────────────────────────────────────────
 const UserBox = ({ user, boxWidth, boxHeight }: any) => {
     const { isSpeaking, volume, isMuted } = user;
 
@@ -102,7 +99,6 @@ const UserBox = ({ user, boxWidth, boxHeight }: any) => {
     );
 };
 
-// ─── Grid ─────────────────────────────────────────────────────────────────────
 const UserCallBox = ({ users, speakingUsers = [], mutedUsers = {} }: {
     users: Array<{ name: string; userId?: string; avatar: string }>;
     speakingUsers?: Array<{ userId: string; volume: number }>;

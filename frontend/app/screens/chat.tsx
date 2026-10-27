@@ -56,7 +56,6 @@ const PREVIEW_TYPES: Record<string, { icon: IconName; label: string }> = {
   money: { icon: "wallet-outline", label: "Payment" },
 };
 
-/** Last-message line for the chat list: an icon for media/calls, and a readable label instead of the raw type. */
 const lastMessagePreview = (type?: string, text?: string | null): { icon?: IconName; text: string } => {
   const known = type ? PREVIEW_TYPES[type] : undefined;
   if (!known) return { text: text || "No messages yet" };
@@ -232,7 +231,6 @@ export default function Chat() {
   const [filterType, setFilterType] = useState<"all" | "unread" | "group">("all");
   const [showFABMenu, setShowFABMenu] = useState(false);
   const [section, setSection] = useState<"chats" | "calls">("chats");
-
 
   useEffect((() => {
     (async () => {

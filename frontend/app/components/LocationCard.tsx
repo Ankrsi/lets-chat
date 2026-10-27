@@ -5,20 +5,16 @@ import { Alert, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } fr
 import StaticMap from "./StaticMap";
 
 interface Props {
-  /** Message content: { lat, lng, address?, accuracy? } — older messages only have msg: "lat,lng". */
   content: any;
-  /** Long press on the card (message options) */
   onLongPress?: () => void;
 }
 
-/** Coordinates from new ({ lat, lng }) or old ({ msg: "lat,lng" }) location messages. */
 export const parseLocation = (content: any): { lat: number; lng: number } | null => {
   const lat = Number(content?.lat ?? String(content?.msg ?? "").split(",")[0]);
   const lng = Number(content?.lng ?? String(content?.msg ?? "").split(",")[1]);
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 };
 
-/** Opens the phone's maps app at the point (falls back to Google Maps in the browser). */
 export async function openInMaps(lat: number, lng: number, label = "Shared location") {
   const q = encodeURIComponent(label);
   const native = Platform.OS === "ios"

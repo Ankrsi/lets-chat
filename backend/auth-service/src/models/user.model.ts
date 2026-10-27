@@ -37,7 +37,6 @@ userSchema.index({ username: 1 }, { unique: true, partialFilterExpression: { use
 
 export const User = model<IUser>("User", userSchema);
 
-/** Fields the user sees about themselves. */
 export const toSelf = (u: IUser) => ({
   _id: String(u._id),
   phone: u.phone,
@@ -52,7 +51,6 @@ export const toSelf = (u: IUser) => ({
   createdAt: u.createdAt,
 });
 
-/** Fields other users may see. Phone is included because chats are keyed by phone. */
 export const toPublic = (u: IUser) => ({
   _id: String(u._id),
   phone: u.phone,

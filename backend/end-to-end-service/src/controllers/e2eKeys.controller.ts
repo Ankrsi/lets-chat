@@ -3,7 +3,6 @@ import { ApiResponse } from "../utils/apiResponse";
 import { asyncHandler } from "../utils/asyncHandler";
 import { UserKeys, OneTimePreKey } from "../modals/keys.model";
 
-/* ---------------- validation helpers ---------------- */
 const isBase64 = (s: any) =>
     typeof s === "string" && s.length > 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(s);
 

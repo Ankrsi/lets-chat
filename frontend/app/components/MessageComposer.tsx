@@ -5,9 +5,7 @@ import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { RoomStyles } from "../styles";
 
 export interface ComposerHandle {
-  /** Replace the text (e.g. editing a message). */
   setText: (value: string) => void;
-  /** Insert at the end (e.g. an emoji). */
   insert: (value: string) => void;
   focus: () => void;
 }
@@ -17,20 +15,14 @@ interface Props {
   onToggleEmoji: () => void;
   onFocusInput: () => void;
   onAttach: () => void;
-  /** Camera: tap = photo, long-press = video */
   onCamera: () => void;
   onCameraVideo: () => void;
   onSend: (text: string) => void;
   onTyping: () => void;
-  /** Resolves false when recording couldn't start (e.g. no mic permission) */
   onStartRecord: () => Promise<boolean>;
   onStopRecord: () => void;
 }
 
-/**
- * Message input row. It keeps the text itself, so typing re-renders only this row,
- * not the whole chat room. The room reaches it through the ref (setText / insert).
- */
 const MessageComposer = React.memo(forwardRef<ComposerHandle, Props>(function MessageComposer(
   { emojiOpen, onToggleEmoji, onFocusInput, onAttach, onCamera, onCameraVideo, onSend, onTyping, onStartRecord, onStopRecord },
   ref,

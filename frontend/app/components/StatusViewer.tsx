@@ -24,11 +24,9 @@ export const statusTimeAgo = (iso?: string | null) => {
 type Props = {
   myStatus: boolean;
   user: any;
-  /** Display name and avatar for the header */
   title: string;
   avatar?: string | null;
   onClose: () => void;
-  /** Name / photo of a viewer, for your own status's "views" list */
   profileOf?: (phone: string) => { name?: string; profile_image?: string } | undefined;
 };
 

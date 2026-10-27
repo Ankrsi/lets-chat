@@ -1,5 +1,6 @@
 import { currentScreen } from "@/app/_layout";
 import { clearTurnCredentials, refreshTurnCredentials } from "@/utils/turn";
+import { clearVideoCache } from "@/utils/videoCache";
 import { decryptIncomingEdit, decryptIncomingMessage, handleGroupKeyPacket, handleResendRequest, initKey, rotateGroupKey } from "@/utils/e2ee";
 import { registerGroupVideoCallHandlers } from "@/contexts/groupVideoCallService";
 import { registerVideoCallHandlers } from "@/contexts/videoCallController";
@@ -53,6 +54,7 @@ export const logout = async () => {
   }
   await AsyncStorage.multiRemove(["token", "refreshToken", "userHandle"]);
   await clearTurnCredentials();
+  await clearVideoCache();
   if (router.canDismiss()) router.dismissAll(); // nothing to dismiss when already at the first screen
   router.navigate('/screens/login');
 };

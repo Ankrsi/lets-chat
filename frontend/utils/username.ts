@@ -6,7 +6,6 @@ const USERNAME_PATTERN = /^(?=.{3,20}$)[a-z0-9](?:[a-z0-9]|[._](?![._]))*[a-z0-9
 
 export const normalizeUsername = (input: string) => input.trim().toLowerCase().replace(/^@/, "");
 
-/** Returns why the format is invalid, or null. */
 export const usernameFormatError = (username: string): string | null => {
   if (username.length < 3) return "At least 3 characters";
   if (username.length > 20) return "At most 20 characters";
@@ -23,10 +22,6 @@ export type UsernameStatus =
   | { state: "taken" }
   | { state: "error"; message: string };
 
-/**
- * Checks a username as the user types (debounced). `current` is the user's
- * existing username, which counts as valid without asking the server.
- */
 export function useUsernameStatus(input: string, current?: string | null): UsernameStatus {
   const [status, setStatus] = useState<UsernameStatus>({ state: "idle" });
 

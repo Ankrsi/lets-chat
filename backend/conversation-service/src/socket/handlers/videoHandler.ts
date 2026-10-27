@@ -13,7 +13,6 @@ const readCall = async (callId: string): Promise<any> => {
   try { return JSON.parse((await redisClient.get(`audioVideoActiveCall:${callId}`)) || "{}"); } catch { return {}; }
 };
 
-/** Emits to every socket of these users (one HMGET). */
 const emitTo = async (io: Server, users: any[], event: string, data: any) => {
   const list = users.filter((u) => u != null).map(String);
   const sockets = (await socketsOf(list)).flat();
@@ -24,7 +23,6 @@ const publishCallUpdate = (redisPub: any, update: Record<string, any>) =>
   redisPub.publish("audioVideoCallUpdate", JSON.stringify(update));
 
 export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) => {
-  /** Clears users' busy flags; with `callId`, only for users whose current call is that one. */
   const clearInCall = async (users: any[], callId?: string) => {
     const list = users.filter((u) => u != null).map(String);
     if (!list.length) return;

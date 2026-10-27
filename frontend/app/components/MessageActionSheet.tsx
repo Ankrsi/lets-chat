@@ -16,13 +16,11 @@ export interface MessageAction {
 
 interface Props {
     visible: boolean;
-    /** Short preview of the message the actions apply to */
     preview: { icon?: IconName; text: string; time?: string; mine?: boolean } | null;
     actions: MessageAction[];
     onClose: () => void;
 }
 
-/** Bottom sheet shown when a message is long-pressed: Reply, Copy, Edit, Info, Forward, Delete… */
 export default function MessageActionSheet({ visible, preview, actions, onClose }: Props) {
     const insets = useSafeAreaInsets();
     const anim = useRef(new Animated.Value(0)).current;

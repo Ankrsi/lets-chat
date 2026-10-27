@@ -6,7 +6,6 @@ import { StyleSheet } from "react-native";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
-/** Gradient rounded-square icon used at the top of the auth screens. */
 export default function BrandMark({ icon = "chatbubbles", size = 64 }: { icon?: IoniconsName; size?: number }) {
   return (
     <LinearGradient

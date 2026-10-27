@@ -7,13 +7,25 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { loadPreview } from "@/app/components/VideoGrid";
 import ConfirmDialog from "@/app/components/ConfirmDialog";
 import { ActivityIndicator, Alert, FlatList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const formatCount = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+
+function VideoTileThumb({ uri }: { uri: string }) {
+  const [thumb, setThumb] = useState<any>(null);
+  useEffect(() => {
+    let alive = true;
+    loadPreview(uri).then((p) => alive && setThumb(p.thumb)).catch(() => undefined);
+    return () => { alive = false; };
+  }, [uri]);
+  if (!thumb) return null;
+  return <ExpoImage source={thumb} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />;
+}
 
 export default function UserProfileScreen() {
   const router = useRouter();
@@ -91,6 +103,11 @@ export default function UserProfileScreen() {
   };
 
   const user = profile?.user;
+  const openList = (tab: "followers" | "following") =>
+    router.push({
+      pathname: "/screens/reels/followList",
+      params: { phone, tab, name: profile?.isMe ? "You" : displayName(user) },
+    });
   const header = profile && user && (
     <View style={ReelStyles.profileHeader}>
       <View style={ReelStyles.profileAvatar}>
@@ -106,14 +123,14 @@ export default function UserProfileScreen() {
           <Text style={ReelStyles.statValue}>{formatCount(profile.counts.reels)}</Text>
           <Text style={ReelStyles.statLabel}>Reels</Text>
         </View>
-        <View style={ReelStyles.stat}>
+        <TouchableOpacity style={ReelStyles.stat} onPress={() => openList("followers")}>
           <Text style={ReelStyles.statValue}>{formatCount(profile.counts.followers)}</Text>
           <Text style={ReelStyles.statLabel}>Followers</Text>
-        </View>
-        <View style={ReelStyles.stat}>
+        </TouchableOpacity>
+        <TouchableOpacity style={ReelStyles.stat} onPress={() => openList("following")}>
           <Text style={ReelStyles.statValue}>{formatCount(profile.counts.following)}</Text>
           <Text style={ReelStyles.statLabel}>Following</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {profile.isMe ? (
@@ -174,11 +191,11 @@ export default function UserProfileScreen() {
             onEndReachedThreshold={0.5}
             renderItem={({ item, index }) => (
               <TouchableOpacity style={ReelStyles.gridTile} onPress={() => openReel(index)} activeOpacity={0.8}>
-                {/* Photo reels show the photo; videos keep the plain tile (no player per tile) */}
-                {isPhotoReel(item) && (
-                  <ExpoImage source={{ uri: reelMediaUrl(item) }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                )}
-                <Ionicons name={isPhotoReel(item) ? "image" : "play"} size={16} color="#FFFFFF" style={ReelStyles.gridPlay} />
+                {/* Photo reels show the photo; videos show a frame from the video */}
+                {isPhotoReel(item)
+                  ? <ExpoImage source={{ uri: reelMediaUrl(item) }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  : <VideoTileThumb uri={reelMediaUrl(item)} />}
+                <Ionicons name={isPhotoReel(item) ? ((item.photos?.length ?? 1) > 1 ? "albums" : "image") : "play"} size={16} color="#FFFFFF" style={ReelStyles.gridPlay} />
                 {!!item.caption && <Text style={ReelStyles.gridCaption} numberOfLines={2}>{item.caption}</Text>}
               </TouchableOpacity>
             )}

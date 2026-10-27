@@ -9,16 +9,10 @@ interface Notify {
   members: (string | number)[];
   event: string;
   data: any;
-  /** `type` stored in the member's offline queue */
   offlineType: string;
-  /** Offline queue prefix: "offline:messages" (default) or "offline:newLogin" */
   queue?: string;
 }
 
-/**
- * Online members get the socket event now; everyone else gets it in their offline queue.
- * Commands are pipelined, so this stays a few round trips however many members there are.
- */
 export const notifyMembers = async ({ io, members, event, data, offlineType, queue = "offline:messages" }: Notify) => {
   const list = [...new Set(members.map(String))];
   if (!list.length) return;

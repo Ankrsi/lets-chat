@@ -19,6 +19,7 @@ import { beforeCursor, canViewReels, getProfiles, PAGE_SIZE, PHONE_PATTERN } fro
 const MAX_REEL_BYTES = 200 * 1024 * 1024; // videos
 const MAX_PHOTO_BYTES = 100 * 1024 * 1024;
 const MAX_CAPTION = 2200;
+const MAX_PHOTOS = 10;
 
 const toReelResponse = (reel: IReel, profiles: Map<string, any>, me: string, likedByMe = false) => ({
   _id: String(reel._id),
@@ -27,6 +28,8 @@ const toReelResponse = (reel: IReel, profiles: Map<string, any>, me: string, lik
   videoUrl: reel.videoUrl, // older app versions read this
   caption: reel.caption,
   duration: reel.duration ?? null,
+  // Every photo of a photo reel, swiped left to right (one entry for a single photo)
+  photos: reel.photos?.length ? reel.photos.map((p) => p.url) : reel.type === "image" ? [reel.videoUrl] : null,
   createdAt: reel.createdAt,
   author: profiles.get(reel.author),
   isMine: reel.author === me,
@@ -51,7 +54,6 @@ const page = async (reels: IReel[], me: string) => {
   };
 };
 
-/** POST /reels/upload-url { mediaType } — step 1: the app uploads the video or photo straight to R2. */
 export const getReelUploadUrl = asyncHandler(async (req: Request, res: Response) => {
   const { mediaType } = req.body;
   if (!REEL_MEDIA_TYPES[mediaType])
@@ -61,41 +63,52 @@ export const getReelUploadUrl = asyncHandler(async (req: Request, res: Response)
   return new ApiResponse(200, { uploadUrl, fileUrl, maxBytes }, "Upload URL created");
 });
 
-/** POST /reels { fileUrl, caption, duration } — step 2: publish the uploaded video or photo. */
+const discard = (keys: string[]) =>
+  Promise.all(keys.map((k) => deleteR2Object(k).catch((e) => console.error("delete rejected reel upload failed", e))));
+
 export const createReel = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
-  const { fileUrl, caption = "", duration } = req.body;
+  const { fileUrl, fileUrls, caption = "", duration } = req.body;
 
-  const key = typeof fileUrl === "string" ? keyFromPublicUrl(fileUrl) : null;
-  if (!key || !key.startsWith(reelKeyPrefix(me))) return new ApiResponse(400, null, "Invalid fileUrl");
+  const urls: unknown[] = Array.isArray(fileUrls) ? fileUrls : [fileUrl];
+  if (!urls.length || urls.length > MAX_PHOTOS) return new ApiResponse(400, null, `A reel can have 1 to ${MAX_PHOTOS} photos`);
+  const keys = urls.map((u) => (typeof u === "string" ? keyFromPublicUrl(u) : null));
+  if (keys.some((k) => !k || !k.startsWith(reelKeyPrefix(me))) || new Set(keys).size !== keys.length)
+    return new ApiResponse(400, null, "Invalid fileUrl");
   if (typeof caption !== "string" || caption.length > MAX_CAPTION)
     return new ApiResponse(400, null, `Caption must be at most ${MAX_CAPTION} characters`);
 
   // The presigned URL can't cap the size, so check what actually arrived in the bucket
-  const object = await headR2Object(key);
-  if (!object) return new ApiResponse(400, null, "File not uploaded yet");
-  const type = object.contentType.startsWith("image/") ? "image" : object.contentType.startsWith("video/") ? "video" : null;
-  const tooBig = type === "image" ? object.size > MAX_PHOTO_BYTES : object.size > MAX_REEL_BYTES;
-  if (!type || !REEL_MEDIA_TYPES[object.contentType] || tooBig) {
-    await deleteR2Object(key).catch((e) => console.error("delete rejected reel upload failed", e));
-    return new ApiResponse(400, null, "Reels must be a video of at most 200 MB or a photo of at most 100 MB");
+  const objects = await Promise.all(keys.map((k) => headR2Object(k!)));
+  if (objects.some((o) => !o)) return new ApiResponse(400, null, "File not uploaded yet");
+  const typeOf = (contentType: string) =>
+    contentType.startsWith("image/") ? "image" : contentType.startsWith("video/") ? "video" : null;
+  const type = typeOf(objects[0]!.contentType);
+  const valid = objects.every((o) => {
+    const t = typeOf(o!.contentType);
+    return t === type && REEL_MEDIA_TYPES[o!.contentType] && o!.size <= (t === "image" ? MAX_PHOTO_BYTES : MAX_REEL_BYTES);
+  });
+  // Several files must all be photos
+  if (!type || !valid || (keys.length > 1 && type !== "image")) {
+    await discard(keys as string[]);
+    return new ApiResponse(400, null, "Reels must be one video of at most 200 MB, or up to 10 photos of at most 100 MB each");
   }
-  if (await Reel.exists({ key })) return new ApiResponse(409, null, "This file is already posted");
+  if (await Reel.exists({ key: keys[0] })) return new ApiResponse(409, null, "This file is already posted");
 
   const reel = await Reel.create({
     author: me,
     type,
-    videoUrl: fileUrl,
-    key,
+    videoUrl: urls[0],
+    key: keys[0],
     caption: caption.trim(),
     duration: type === "video" && Number.isFinite(Number(duration)) ? Math.round(Number(duration)) : undefined,
-    size: object.size,
+    size: objects.reduce((sum, o) => sum + o!.size, 0),
+    photos: keys.length > 1 ? keys.map((key, i) => ({ url: urls[i] as string, key: key!, size: objects[i]!.size })) : undefined,
   });
   const profiles = await getProfiles([me]);
   return new ApiResponse(201, { reel: toReelResponse(reel, profiles, me) }, "Reel posted");
 });
 
-/** GET /reels/feed?before=<reelId> — reels from people I follow, plus my own, newest first. */
 export const getFeed = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   const following: string[] = await Follow.find({ follower: me }).distinct("following");
@@ -113,7 +126,22 @@ export const getFeed = asyncHandler(async (req: Request, res: Response) => {
   return new ApiResponse(200, await page(reels, me), "Feed fetched");
 });
 
-/** GET /reels/user/:phone?before=<reelId> — one person's reels (followers only). */
+export const getSuggested = asyncHandler(async (req: Request, res: Response) => {
+  const me = String(req.user.phone);
+  const [following, blockedMe, mine] = await Promise.all([
+    Follow.find({ follower: me }).distinct<string>("following").exec(),
+    AllFriendsContact.find({ blockedPhones: Number(me) }).distinct<string>("phone").exec(),
+    AllFriendsContact.findOne({ phone: me }).select("blockedPhones").lean<{ blockedPhones?: unknown[] }>(),
+  ]);
+  const excluded = [me, ...following, ...blockedMe, ...(mine?.blockedPhones ?? []).map(String)];
+
+  const reels = await Reel.find({ author: { $nin: excluded }, ...beforeCursor(req.query.before) })
+    .sort({ _id: -1 })
+    .limit(PAGE_SIZE)
+    .lean<IReel[]>();
+  return new ApiResponse(200, await page(reels, me), "Suggested reels fetched");
+});
+
 export const getUserReels = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
   const phone = req.params.phone;
@@ -127,7 +155,6 @@ export const getUserReels = asyncHandler(async (req: Request, res: Response) => 
   return new ApiResponse(200, await page(reels, me), "Reels fetched");
 });
 
-/** DELETE /reels/:id — authors can delete their own reels. */
 export const deleteReel = asyncHandler(async (req: Request, res: Response) => {
   const reel = await Reel.findOne({ _id: req.params.id, author: String(req.user.phone) }).catch(() => null);
   if (!reel) return new ApiResponse(404, null, "Reel not found");
@@ -136,7 +163,9 @@ export const deleteReel = asyncHandler(async (req: Request, res: Response) => {
   await Promise.all([
     ReelLike.deleteMany({ reel: reel._id }),
     ReelComment.deleteMany({ reel: reel._id }),
-    deleteR2Object(reel.key).catch((e) => console.error("delete reel video failed", e)),
+    ...[...new Set([reel.key, ...(reel.photos ?? []).map((p) => p.key)])].map((key) =>
+      deleteR2Object(key).catch((e) => console.error("delete reel media failed", e)),
+    ),
   ]);
   return new ApiResponse(200, null, "Reel deleted");
 });

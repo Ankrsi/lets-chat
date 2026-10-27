@@ -13,7 +13,6 @@ export class DownloadCancelled extends Error {
   }
 }
 
-/** Downloads into the app cache, reporting progress (0..1). Rejects on non-2xx. */
 async function downloadToCache(url: string, name: string, onProgress?: (fraction: number) => void) {
   const dir = `${LegacyFS.cacheDirectory}downloads/`;
   await LegacyFS.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
@@ -30,13 +29,11 @@ async function downloadToCache(url: string, name: string, onProgress?: (fraction
   return res.uri;
 }
 
-/** Readable folder name from a SAF tree URI, e.g. ".../tree/primary%3ADownload" → "Download". */
 const folderLabel = (dirUri: string) => {
   const last = decodeURIComponent(dirUri.split("/").pop() || "");
   return last.split(":").pop() || "the selected folder";
 };
 
-/** Android: copy a cached file into the user's chosen folder (asks for the folder the first time). */
 async function saveToFolderAndroid(localUri: string, name: string, mimeType: string) {
   const writeInto = async (dirUri: string) => {
     const target = new Directory(dirUri).createFile(name, mimeType || "application/octet-stream");
@@ -72,11 +69,6 @@ async function saveToFolderAndroid(localUri: string, name: string, mimeType: str
   return folderLabel(picked.uri);
 }
 
-/**
- * Downloads a chat file to the device.
- * Android: saved into a folder the user picks once (e.g. Download). iOS: share sheet ("Save to Files").
- * Resolves to a short description of where it went.
- */
 export async function downloadFile(
   url: string,
   name: string,

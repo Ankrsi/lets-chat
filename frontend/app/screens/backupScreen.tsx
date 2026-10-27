@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { styles } from "../styles";
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────────
 const DB_NAME = "chat.db";
 const DB_PATH = FileSystem.documentDirectory + `SQLite/${DB_NAME}`;
 const BACKUP_FILE_NAME = "chat_backup.db";
@@ -26,7 +25,6 @@ GoogleSignin.configure({
     scopes: ['https://www.googleapis.com/auth/drive.appdata']
 });
 
-// ─── TYPES ─────────────────────────────────────────────────────────────────────
 type Status = "idle" | "loading" | "success" | "error";
 type ActionType = "backup" | "restore" | null;
 
@@ -37,7 +35,6 @@ interface BackupInfo {
     size: string;
 }
 
-// ─── HELPERS ───────────────────────────────────────────────────────────────────
 const formatDate = (iso: string) => {
     const d = new Date(iso);
     return d.toLocaleDateString("en-IN", {
@@ -431,7 +428,6 @@ const BackupScreen: React.FC = () => {
 
 export default BackupScreen;
 
-// ─── STYLES ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
     header: {
         paddingTop: 60, paddingBottom: 24, paddingHorizontal: 24,

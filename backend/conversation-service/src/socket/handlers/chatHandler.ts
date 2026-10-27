@@ -6,7 +6,6 @@ import { emitWithAck } from "../../utils/emitWithAck";
 import AllFriendsContact from "../../models/contactModal/allFriendsContact.model";
 import { TOPICS } from "../../kafka/kafkaClient";
 
-/** Read/delivered receipts: one Redis event per message, published together. */
 const publishStatus = (redisPub: any, updatedStatus: "delivered" | "read", { messageIds, conversationId, username, timestamp }: any) =>
   Promise.all(
     messageIds.map((messageId: string) =>

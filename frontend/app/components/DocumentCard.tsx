@@ -13,9 +13,7 @@ interface Props {
   name: string;
   size?: number | null;
   mimeType?: string;
-  /** Preview mode (before sending): shows the card without download behaviour. */
   preview?: boolean;
-  /** Long press on the card (message options) */
   onLongPress?: () => void;
 }
 

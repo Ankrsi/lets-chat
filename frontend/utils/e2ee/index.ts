@@ -20,10 +20,8 @@ import * as SecureStore from 'expo-secure-store';
 
 export { isEnvelope } from 'e2e-crypto';
 
-/** Set to false to send/receive exactly like before e2e-crypto (for debugging). Incoming plaintext always works. */
 export const E2EE_ENABLED = true;
 
-/** Message types whose content is end-to-end encrypted. */
 const E2E_MESSAGE_TYPES = ['text', 'contact', 'location', 'voice', 'audio', 'image', 'video', 'file'];
 
 const WAITING_TEXT = '🔒 Waiting for this message. This may take a while.';
@@ -78,23 +76,18 @@ const e2e = new E2EEClient({
 // Keys
 // ══════════════════════════════════════════════════════════
 
-/** Creates this device's identity on first run and publishes its public bundle. Call after login / on app start. */
 export const initKey = () => e2e.init();
 
-/** Re-fetches a peer's bundle (e.g. when opening their chat) so a reinstall is noticed. */
 export const refreshPeerBundle = (peerId: string) => e2e.refreshBundle(peerId);
 
-/** Whether this chat already has end-to-end encryption set up. */
 export async function hasSecureChat(type: string, id: string): Promise<boolean> {
   if (type === 'group') return e2e.hasGroupKey(id);
   if (type === 'single') return e2e.hasDirectSession(id);
   return false;
 }
 
-/** Forces a fresh handshake with this peer on the next message. */
 export const resetSession = (peerId: string) => e2e.resetDirect(peerId);
 
-/** Rotate our sender key for a group. Call when members are removed or leave. */
 export const rotateGroupKey = (conversationId: string) => e2e.resetGroup(conversationId);
 
 // ══════════════════════════════════════════════════════════
@@ -118,11 +111,6 @@ async function encryptorFor(conversationId: string, myId: string): Promise<Encry
   return (plaintext) => e2e.encryptDirect(others[0], plaintext);
 }
 
-/**
- * Encrypts `content` and `replyToMessage` of a message about to be emitted, in place.
- * Save the plaintext copy locally before calling this. Leaves it plaintext if a
- * recipient has no E2EE keys yet.
- */
 export async function encryptOutgoingMessage(socketData: any): Promise<void> {
   if (!E2EE_ENABLED || !E2E_MESSAGE_TYPES.includes(socketData.messageType)) return;
   if (__DEV__) console.log('[e2ee] encrypting', socketData.messageId, socketData.messageType, 'conv', socketData.conversationId);
@@ -144,7 +132,6 @@ export async function encryptOutgoingMessage(socketData: any): Promise<void> {
   if (__DEV__) console.log('[e2ee] sent', socketData.messageId, describe(content));
 }
 
-/** Encrypts `newMessage` of an edit payload in place. */
 export async function encryptOutgoingEdit(payload: any): Promise<void> {
   if (!E2EE_ENABLED) return;
   const encrypt = await encryptorFor(payload.conversationId, payload.username);
@@ -164,11 +151,6 @@ const describe = (value: unknown) => {
   return env.e2e === 'sk1' ? `group kid=${env.kid.slice(0, 6)} i=${env.i}` : `1:1 n=${env.h.n} pn=${env.h.pn}${env.hs ? ' +handshake' : ''}`;
 };
 
-/**
- * Makes sure the sender's key bundle is saved locally before a 1:1 decrypt: uses the local copy if
- * there is one, otherwise fetches it from the bundle API and saves it. Decrypting doesn't need it
- * (the first message carries the sender's keys), so a failed fetch (e.g. offline) never blocks it.
- */
 async function ensureSenderBundle(senderId: string): Promise<void> {
   try {
     await e2e.sessions.getBundle(senderId);
@@ -177,7 +159,6 @@ async function ensureSenderBundle(senderId: string): Promise<void> {
   }
 }
 
-/** Decrypts one field. Group messages whose sender key hasn't arrived are queued and return null. */
 async function decryptField(msg: any, field: PendingMeta['field']): Promise<any | null> {
   const value = msg[field];
   if (parseEnvelope(value)?.e2e === 'sk1') {
@@ -189,10 +170,6 @@ async function decryptField(msg: any, field: PendingMeta['field']): Promise<any 
   return parseJSON(await e2e.decryptDirect(String(msg.senderId), value));
 }
 
-/**
- * Decrypts `content` / `replyToMessage` of a received message in place.
- * Plaintext messages pass through untouched.
- */
 export async function decryptIncomingMessage(msg: any, myId: string): Promise<void> {
   if (String(msg.senderId) === String(myId)) return;
   const contentEncrypted = isEnvelope(msg.content);
@@ -233,7 +210,6 @@ export async function decryptIncomingMessage(msg: any, myId: string): Promise<vo
   }
 }
 
-/** Decrypts `newMessage` of an edit in place. Returns false if it can't be decrypted (skip the edit). */
 export async function decryptIncomingEdit(data: any, myId: string): Promise<boolean> {
   if (String(data.username) === String(myId) || !isEnvelope(data.newMessage)) return true;
   try {
@@ -250,7 +226,6 @@ export async function decryptIncomingEdit(data: any, myId: string): Promise<bool
   }
 }
 
-/** A group member's sender key, delivered over our 1:1 session (`chat:send-group-key`). Also fills in queued messages. */
 export async function handleGroupKeyPacket(senderId: string, content: unknown): Promise<void> {
   await ensureSenderBundle(String(senderId));   // the key packet is a 1:1 message
   await e2e.acceptSenderKey(String(senderId), content);
@@ -270,7 +245,6 @@ function requestResend(conversationId: string, senderId: string, messageId: stri
   getGlobalSocket()?.emit('chat:resend-request', { kind: 'request', to: senderId, senderId: myId, conversationId, messageId });
 }
 
-/** Handles `chat:resend-request`: a request for one of our messages, or the resent message we asked for. */
 export async function handleResendRequest(p: any, myId: string): Promise<void> {
   if (!p || String(p.to) !== String(myId)) return;
   const peer = String(p.senderId);

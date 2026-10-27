@@ -130,7 +130,6 @@ export const updateMessageReactions = async (conversationId: string, messageId: 
     }
 };
 
-/** The latest `limit` messages of a conversation, oldest first (for display top → bottom). */
 export const lastMsgsByConvId = async (convId: string, limit = 50) => {
     try {
         return await db.getAllAsync(
@@ -334,7 +333,6 @@ export const getMessageById = async (messageId: string, conversationId: string) 
     }
 }
 
-/** Preview text stored in conversations.lastMessage for a message row. */
 const previewTextOf = (msg: Record<string, any>): string => {
     let c: any = {};
     try { c = typeof msg.content === "string" ? JSON.parse(msg.content || "{}") : (msg.content ?? {}); } catch { c = {}; }
@@ -342,10 +340,6 @@ const previewTextOf = (msg: Record<string, any>): string => {
     return (typeof c?.msg === "string" && c.msg) || caption || c?.name || msg.messageType || "";
 };
 
-/**
- * Points the conversation's "last message" (chat list preview) at the newest message still in the chat.
- * Call after messages are deleted or cleared. An emptied chat keeps its place in the list with no preview.
- */
 export const refreshConversationLastMessage = async (id: string) => {
     try {
         const lastMsg: Record<string, any> | null = await db.getFirstAsync(

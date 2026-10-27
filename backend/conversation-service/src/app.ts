@@ -26,7 +26,6 @@ const app = express();
 // Behind a load balancer, set TRUST_PROXY_HOPS so rate limits see the client's IP
 app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 0));
 
-
 //  Secure HTTP Headers
 app.use(helmet());
 

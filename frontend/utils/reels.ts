@@ -12,12 +12,12 @@ export interface ReelAuthor {
 
 export interface Reel {
   _id: string;
-  /** Reels from before photo reels existed have no type: they're videos */
   type?: "video" | "image";
   mediaUrl?: string;
   videoUrl: string;
   caption: string;
   duration: number | null;
+  photos?: string[] | null;
   createdAt: string;
   author: ReelAuthor;
   isMine: boolean;
@@ -25,6 +25,7 @@ export interface Reel {
   commentCount?: number;
   shareCount?: number;
   likedByMe?: boolean;
+  suggested?: boolean;
 }
 
 export interface ReelComment {
@@ -54,11 +55,28 @@ const cursor = (before?: string | null) => (before ? `?before=${encodeURICompone
 export const fetchFeed = async (before?: string | null): Promise<ReelPage> =>
   (await CHATAPI.get(`/reels/feed${cursor(before)}`)).data;
 
+export const fetchSuggested = async (before?: string | null): Promise<ReelPage> => {
+  const page: ReelPage = (await CHATAPI.get(`/reels/suggested${cursor(before)}`)).data;
+  return { ...page, reels: page.reels.map((r) => ({ ...r, suggested: true })) };
+};
+
 export const fetchUserReels = async (phone: string, before?: string | null): Promise<ReelPage> =>
   (await CHATAPI.get(`/reels/user/${phone}${cursor(before)}`)).data;
 
 export const fetchSocialProfile = async (phone: string): Promise<SocialProfile> =>
   (await CHATAPI.get(`/social/profile/${phone}`)).data;
+
+export interface FollowListUser extends ReelAuthor {
+  isMe: boolean;
+  isFollowing: boolean;
+}
+
+export const fetchFollowList = async (
+  phone: string,
+  side: "followers" | "following",
+  before?: string | null,
+): Promise<{ users: FollowListUser[]; nextCursor: string | null }> =>
+  (await CHATAPI.get(`/social/${side}/${phone}${cursor(before)}`)).data;
 
 export const followUser = (phone: string) => CHATAPI.post(`/social/follow/${phone}`);
 export const unfollowUser = (phone: string) => CHATAPI.delete(`/social/follow/${phone}`);
@@ -76,7 +94,6 @@ export const addReelComment = async (id: string, text: string): Promise<{ commen
 export const deleteReelComment = async (id: string, commentId: string): Promise<number> =>
   (await CHATAPI.delete(`/reels/${id}/comments/${commentId}`)).data.commentCount;
 
-/** 999 → "999", 1250 → "1.2K", 3400000 → "3.4M" */
 export const compactCount = (n?: number) => {
   if (!n) return "0";
   if (n < 1000) return String(n);
@@ -86,29 +103,38 @@ export const compactCount = (n?: number) => {
 
 export const reelMediaUrl = (r: Reel) => r.mediaUrl || r.videoUrl;
 export const isPhotoReel = (r: Reel) => r.type === "image";
+export const reelPhotos = (r: Reel) => (r.photos?.length ? r.photos : [reelMediaUrl(r)]);
 
-/** Uploads a local video or photo straight to storage, then publishes it. */
-export async function uploadReel(
-  video: { uri: string; mimeType: string; duration?: number | null },
-  caption: string,
-  onProgress: (percent: number) => void,
-): Promise<Reel> {
-  const { data } = await CHATAPI.post("/reels/upload-url", { mediaType: video.mimeType });
+type UploadFile = { uri: string; mimeType: string };
 
+const putFile = async (file: UploadFile, onProgress: (percent: number) => void): Promise<string> => {
+  const { data } = await CHATAPI.post("/reels/upload-url", { mediaType: file.mimeType });
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", data.uploadUrl);
-    xhr.setRequestHeader("Content-Type", video.mimeType);
+    xhr.setRequestHeader("Content-Type", file.mimeType);
     xhr.upload.onprogress = (e) => e.total && onProgress(Math.round((e.loaded / e.total) * 100));
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)));
     xhr.onerror = () => reject(new Error("Upload failed. Check your connection."));
-    xhr.send({ uri: video.uri, type: video.mimeType, name: "reel" } as any);
+    xhr.send({ uri: file.uri, type: file.mimeType, name: "reel" } as any);
   });
+  return data.fileUrl;
+};
 
+export async function uploadReel(
+  files: UploadFile[],
+  caption: string,
+  onProgress: (percent: number) => void,
+  duration?: number | null,
+): Promise<Reel> {
+  const fileUrls: string[] = [];
+  for (const [i, file] of files.entries()) {
+    fileUrls.push(await putFile(file, (p) => onProgress(Math.round((i * 100 + p) / files.length))));
+  }
   const res = await CHATAPI.post("/reels", {
-    fileUrl: data.fileUrl,
+    ...(fileUrls.length > 1 ? { fileUrls } : { fileUrl: fileUrls[0] }),
     caption,
-    ...(video.duration ? { duration: video.duration } : {}),
+    ...(duration ? { duration } : {}),
   });
   return res.data.reel;
 }

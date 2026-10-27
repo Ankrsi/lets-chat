@@ -11,17 +11,11 @@ import { generateIceServers } from "../services/turn.service";
 
 const isDuplicateKey = (err: any) => err?.code === 11000;
 
-/** POST /auth/generate-otp — step 1 of both sign-up and login. */
 export const generateOtp = asyncHandler(async (req: Request, res: Response) => {
   await sendOtp(req.body.phone);
   return new ApiResponse(200, { phone: req.body.phone }, "OTP sent");
 });
 
-/**
- * POST /auth/verify-otp — step 2. Creates the account on first login.
- * Only one device may be signed in: another device gets 409 unless forceLogin is set,
- * in which case the other devices are signed out.
- */
 export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
   const { phone, otp, deviceId, fcm_token, voip_token, device_type, appName, forceLogin } = req.body;
 
@@ -64,7 +58,6 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
   }, "Logged in successfully");
 });
 
-/** POST /auth/register — completes sign-up by choosing a username and name. */
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { username, first_name, last_name } = req.body;
   const user = await User.findById(req.user!._id);
@@ -87,36 +80,28 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   return new ApiResponse(201, { accessToken, user: toSelf(user) }, "Registration completed");
 });
 
-/** GET /auth/username-available?username=... */
 export const usernameAvailable = asyncHandler(async (req: Request, res: Response) => {
   const username = String(req.query.username);
   const taken = await User.exists({ username, _id: { $ne: req.user!._id } });
   return new ApiResponse(200, { username, available: !taken }, taken ? "Username is taken" : "Username is available");
 });
 
-/** GET /auth/verify-user — the signed-in user's profile (the app calls this right after login). */
 export const verifyUser = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.user!._id);
   if (!user) throw new ApiError("User not found", 404);
   return new ApiResponse(200, { user: toSelf(user) }, "User verified");
 });
 
-/**
- * GET /auth/turn-credentials — ICE servers (Cloudflare TURN) for 1:1 calls, with a username and
- * password that expire after `ttl` seconds. The app fetches them on open and when they run out.
- */
 export const turnCredentials = asyncHandler(async (req: Request, res: Response) => {
   const { iceServers, ttl } = await generateIceServers();
   return new ApiResponse(200, { iceServers, ttl, expiresAt: new Date(Date.now() + ttl * 1000).toISOString() }, "TURN credentials generated");
 });
 
-/** POST /auth/get-new-access-token */
 export const refreshAccessToken = asyncHandler(async (req: Request, res: Response) => {
   const tokens = await rotateRefreshToken(req.body.refreshToken);
   return new ApiResponse(200, tokens, "Token refreshed");
 });
 
-/** POST /auth/logout — ends this device's session (and its push tokens with it). */
 export const logout = asyncHandler(async (req: Request, res: Response) => {
   await Session.deleteOne({ _id: req.user!.sid });
   return new ApiResponse(200, null, "Logged out");

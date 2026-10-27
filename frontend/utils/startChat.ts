@@ -3,10 +3,6 @@ import { apiErrorMessage, CHATAPI } from "@/utils/api";
 import { Router } from "expo-router";
 import { Alert } from "react-native";
 
-/**
- * Opens the one-to-one chat with a phone number. The server returns the existing
- * conversation if there is one, otherwise creates it.
- */
 export async function openChatWith(phone: string, router: Router) {
   try {
     const res = await CHATAPI.post("/chats/createConversations", { type: "single", memberIds: [String(phone)] });

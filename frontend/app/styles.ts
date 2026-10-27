@@ -1915,7 +1915,6 @@ export const RoomStyles = StyleSheet.create({
         backgroundColor: colors.surface,
     },
 
-    // ── Header ──
     header: {
         backgroundColor: colors.surface,
         flexDirection: 'row',
@@ -1940,13 +1939,11 @@ export const RoomStyles = StyleSheet.create({
         fontSize: 22,
     },
 
-    // ── Chat list ──
     chatLists: {
         flex: 1,
         backgroundColor: colors.background,
     },
 
-    // ── Message bubbles ──
     message: {
         minWidth: 80, // short replies ("ok") still fit the time + ticks
         maxWidth: '78%',
@@ -1970,7 +1967,6 @@ export const RoomStyles = StyleSheet.create({
         backgroundColor: colors.primarySoft,
     },
 
-    // ── System message (group_create) ──
     systemMessage: {
         backgroundColor: colors.surface,
         borderRadius: 10,
@@ -1996,7 +1992,6 @@ export const RoomStyles = StyleSheet.create({
         marginTop: 2,
     },
 
-    // ── Reply bubble ──
     replyPreview: {
         backgroundColor: '#1f2c33',
         padding: 8,
@@ -2019,7 +2014,6 @@ export const RoomStyles = StyleSheet.create({
         fontSize: 13,
     },
 
-    // ── Footer ──
     chatFooter: {
         backgroundColor: colors.surface,
         paddingHorizontal: 8,
@@ -2064,7 +2058,6 @@ export const RoomStyles = StyleSheet.create({
         elevation: 20,
     },
 
-    // ── Attachment tray ──
     // Attachment tray. The clip sits directly above the input bar (bottom = its top edge) and hides
     // anything below that edge, so the card slides out of the input instead of over it.
     optionClip: {
@@ -2119,7 +2112,6 @@ export const RoomStyles = StyleSheet.create({
         color: colors.text,
     },
 
-    // ── Call card ──
     callCard: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -2136,7 +2128,6 @@ export const RoomStyles = StyleSheet.create({
         marginTop: 2,
     },
 
-    // ── Map card ──
     roomMapCard: {
         borderRadius: 10,
         overflow: 'hidden',
@@ -2160,7 +2151,6 @@ export const RoomStyles = StyleSheet.create({
         color: colors.textSecondary,
     },
 
-    // ── Contact card ──
     avatar: {
         width: 40,
         height: 40,
@@ -2195,7 +2185,6 @@ export const RoomStyles = StyleSheet.create({
         fontWeight: '500',
     },
 
-    // ── Menu ──
     menuOverlay: {
         flex: 1,
         backgroundColor: colors.overlay,
@@ -2407,7 +2396,18 @@ export const ReelStyles = StyleSheet.create({
     topTitle: { flex: 1, fontSize: 22, fontWeight: '800', color: '#FFFFFF', marginLeft: 4 },
     topBtn: { padding: 6, marginLeft: 6 },
     bottomInfo: { position: 'absolute', left: 14, right: 70, bottom: 18 },
-    authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+    authorLine: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
+    authorRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+    suggestedLabel: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.8)', marginBottom: 6 },
+    reelFollowBtn: { borderWidth: 1, borderColor: '#FFFFFF', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 4 },
+    reelFollowBtnDone: { borderColor: 'rgba(255,255,255,0.4)' },
+    reelFollowText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+    // Multi-photo reels
+    photoCounter: { position: 'absolute', top: 64, right: 12, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 },
+    photoCounterText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+    photoDots: { position: 'absolute', bottom: 6, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
+    photoDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.45)' },
+    photoDotActive: { backgroundColor: '#FFFFFF' },
     authorAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#333333', marginRight: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
     authorName: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
     authorHandle: { fontSize: 12, color: 'rgba(255,255,255,0.75)' },
@@ -2415,6 +2415,17 @@ export const ReelStyles = StyleSheet.create({
     time: { fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 6 },
     sideActions: { position: 'absolute', right: 10, bottom: 24, alignItems: 'center', gap: 18 },
     sideBtn: { alignItems: 'center' },
+    muteBtn: {
+        position: 'absolute',
+        top: 64, // below the screen's top bar
+        right: 12,
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     sideText: { fontSize: 11, color: '#FFFFFF', marginTop: 2 },
     shadow: { textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
 
@@ -2475,6 +2486,10 @@ export const ReelStyles = StyleSheet.create({
     personName: { fontSize: 15, fontWeight: '600', color: colors.text },
     personSub: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
     sectionLabel: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.8, marginTop: 14, marginBottom: 6, marginLeft: 16 },
+    listFollowBtn: { backgroundColor: colors.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6, minWidth: 92, alignItems: 'center' },
+    listFollowingBtn: { backgroundColor: colors.surfaceAlt },
+    listFollowText: { color: colors.textOnPrimary, fontSize: 13, fontWeight: '700' },
+    listFollowingText: { color: colors.text },
     hintText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 10, paddingHorizontal: 30 },
 });
 

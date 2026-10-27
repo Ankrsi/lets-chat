@@ -49,7 +49,6 @@ interface DeviceInfo {
   appCode?: string;
 }
 
-/** Starts (or restarts) the session for this device and returns a fresh token pair. */
 export const createSession = async (user: IUser, device: DeviceInfo) => {
   const refreshToken = newRefreshToken();
   const session = await Session.findOneAndUpdate(
@@ -70,7 +69,6 @@ export const createSession = async (user: IUser, device: DeviceInfo) => {
   return { accessToken: signAccessToken(user, session._id), refreshToken, session };
 };
 
-/** Exchanges a refresh token for a new pair. The old refresh token stops working. */
 export const rotateRefreshToken = async (refreshToken: string) => {
   const session = await Session.findOne({ refreshTokenHash: hashToken(refreshToken) });
   if (!session || session.expiresAt.getTime() < Date.now())
@@ -89,5 +87,4 @@ export const rotateRefreshToken = async (refreshToken: string) => {
   return { accessToken: signAccessToken(user, session._id), refreshToken: next };
 };
 
-/** Re-issues an access token for an existing session, e.g. after the username changed. */
 export const reissueAccessToken = (user: IUser, sessionId: string) => signAccessToken(user, sessionId);

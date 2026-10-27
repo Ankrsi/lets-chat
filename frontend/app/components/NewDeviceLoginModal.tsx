@@ -8,7 +8,6 @@ import {
     Animated,
 } from 'react-native';
 
-
 interface Props {
     visible: boolean;
     onVerify: () => void;

@@ -12,7 +12,6 @@ export interface PrefetchedRoom {
 const cache = new Map<string, PrefetchedRoom>();
 const MAX_AGE_MS = 5000;
 
-/** Reads a room's details, latest messages and unread IDs from the local DB (milliseconds). */
 export async function prefetchRoom(id: string) {
   try {
     // Unread first: the room clears it on open, and the load must reach the first unread message
@@ -35,7 +34,6 @@ export async function prefetchRoom(id: string) {
   }
 }
 
-/** Hands the prefetched data to the room once (null if missing or stale). */
 export function takePrefetchedRoom(id: string): PrefetchedRoom | null {
   const hit = cache.get(id);
   cache.delete(id);

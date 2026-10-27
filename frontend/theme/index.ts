@@ -59,7 +59,6 @@ export const font = {
 
 type ShadowStyle = Pick<ViewStyle, "shadowColor" | "shadowOffset" | "shadowOpacity" | "shadowRadius" | "elevation">;
 
-/** Soft, low-contrast elevation for cards and floating elements (usable on View and Text styles). */
 export const shadow = (level: 1 | 2 | 3 = 1): ShadowStyle => {
   const map = { 1: [2, 8, 0.06, 2], 2: [6, 16, 0.08, 5], 3: [10, 24, 0.12, 10] } as const;
   const [y, r, o, e] = map[level];

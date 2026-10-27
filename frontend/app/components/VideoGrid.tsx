@@ -16,26 +16,28 @@ type VideoItem = { name?: string; url?: string } | string;
 
 interface Props {
     urls: VideoItem[];
-    /** Long press on the card (message options) */
     onLongPress?: () => void;
 }
-
-/* ---------------- preview (thumbnail + duration) ---------------- */
 
 type Preview = { thumb: VideoThumbnail | null; duration: number | null };
 
 // One preview per URL for the whole session: scrolling back doesn't reload videos
 const previewCache = new Map<string, Promise<Preview>>();
 
-/**
- * Loads just enough of the video for a first-frame thumbnail and its duration, using a
- * short-lived player (no view attached), then releases it.
- */
-function loadPreview(uri: string): Promise<Preview> {
+// Previews are made one at a time: each needs a video decoder, and phones have few of them
+// (a single one for 4K), so a screen full of video tiles must not open players all at once.
+let previewQueue: Promise<unknown> = Promise.resolve();
+const oneAtATime = <T,>(task: () => Promise<T>): Promise<T> => {
+    const run = previewQueue.then(task, task);
+    previewQueue = run.catch(() => undefined);
+    return run;
+};
+
+export function loadPreview(uri: string): Promise<Preview> {
     const cached = previewCache.get(uri);
     if (cached) return cached;
 
-    const promise = new Promise<Preview>((resolve, reject) => {
+    const promise = oneAtATime(() => new Promise<Preview>((resolve, reject) => {
         const player = createVideoPlayer(uri);
         player.muted = true;
         let settled = false;
@@ -63,7 +65,7 @@ function loadPreview(uri: string): Promise<Preview> {
         const statusSub = player.addListener("statusChange", ({ status, error }) => {
             if (status === "error") finish(() => reject(new Error(error?.message || "Video failed to load")));
         });
-    });
+    }));
 
     previewCache.set(uri, promise);
     promise.catch(() => previewCache.delete(uri)); // allow a retry next time it's shown
@@ -78,8 +80,6 @@ const formatDuration = (seconds: number | null) => {
     const sec = String(s % 60).padStart(2, "0");
     return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 };
-
-/* ---------------- full-screen player ---------------- */
 
 // Mounted only while open, so its player exists only while watching
 function FullscreenVideo({ uri, onClose }: { uri: string; onClose: () => void }) {
@@ -115,8 +115,6 @@ function FullscreenVideo({ uri, onClose }: { uri: string; onClose: () => void })
         </View>
     );
 }
-
-/* ---------------- one tile ---------------- */
 
 function VideoCell({ uri, style, overlay, onLongPress }: { uri: string; style: any; overlay?: React.ReactNode; onLongPress?: () => void }) {
     const [preview, setPreview] = useState<Preview | null>(null);
@@ -178,8 +176,6 @@ function VideoCell({ uri, style, overlay, onLongPress }: { uri: string; style: a
         </>
     );
 }
-
-/* ---------------- grid ---------------- */
 
 const VideoGrid: React.FC<Props> = ({ urls = [], onLongPress }) => {
     const count = urls.length;

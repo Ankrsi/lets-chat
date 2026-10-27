@@ -9,7 +9,6 @@ const RESERVED = new Set([
 
 export const normalizeUsername = (input: string) => input.trim().toLowerCase();
 
-/** Returns the reason a username can't be used, or null if the format is fine. */
 export const usernameProblem = (username: string): string | null => {
   if (!USERNAME_PATTERN.test(username))
     return "Username must be 3-20 characters: letters, numbers, '.' or '_', starting and ending with a letter or number";

@@ -61,10 +61,6 @@ export const sendOtp = async (phone: string) => {
   );
 };
 
-/**
- * Throws unless `code` is the current OTP for `phone`. A verified code stays valid until it
- * expires or consumeOtp() is called, so the app can retry the same code with forceLogin.
- */
 export const checkOtp = async (phone: string, code: string) => {
   const record = await Otp.findOne({ phone });
   if (!record || record.expiresAt.getTime() < Date.now())
@@ -100,5 +96,4 @@ export const checkOtp = async (phone: string, code: string) => {
   await Otp.updateOne({ _id: record._id }, { $set: { verifiedHash: hashCode(phone, code) } });
 };
 
-/** Uses up the OTP after a successful login. */
 export const consumeOtp = (phone: string) => Otp.deleteOne({ phone });

@@ -1,5 +1,5 @@
 import {
-  compactCount, countReelShare, displayName, isPhotoReel, likeReel, Reel, reelMediaUrl, unlikeReel,
+  compactCount, countReelShare, displayName, followUser, isPhotoReel, likeReel, Reel, reelMediaUrl, reelPhotos, unlikeReel,
 } from "@/utils/reels";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -20,12 +20,6 @@ const timeAgo = (iso: string) => {
   return new Date(iso).toLocaleDateString();
 };
 
-// ── One reel ───────────────────────────────────────────────────────────────
-/**
- * Photo reel. Fills the screen like a video when the photo's shape is close to the screen's;
- * a much wider (or taller) photo is shown whole over a blurred, full-screen copy of itself
- * instead of being cropped hard or getting black bars.
- */
 function PhotoReel({ uri, height }: { uri: string; height: number }) {
   const [width, setWidth] = useState(0);
   const [ratio, setRatio] = useState<number | null>(null); // photo width / height
@@ -51,11 +45,54 @@ function PhotoReel({ uri, height }: { uri: string; height: number }) {
   );
 }
 
-const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, commentCount, onAuthorPress, onDelete, onOpenComments }: {
+function PhotoCarousel({ uris, height, onTap }: { uris: string[]; height: number; onTap: () => void }) {
+  const [width, setWidth] = useState(0);
+  const [index, setIndex] = useState(0);
+  if (uris.length === 1) {
+    return (
+      <Pressable style={ReelStyles.video} onPress={onTap}>
+        <PhotoReel uri={uris[0]} height={height} />
+      </Pressable>
+    );
+  }
+  return (
+    <View style={ReelStyles.video} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {width > 0 && (
+        <FlatList
+          data={uris}
+          keyExtractor={(uri, i) => `${i}-${uri}`}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+          onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
+          initialNumToRender={2}
+          windowSize={3}
+          renderItem={({ item }) => (
+            <Pressable style={{ width, height }} onPress={onTap}>
+              <PhotoReel uri={item} height={height} />
+            </Pressable>
+          )}
+        />
+      )}
+      <View style={ReelStyles.photoCounter} pointerEvents="none">
+        <Text style={ReelStyles.photoCounterText}>{index + 1}/{uris.length}</Text>
+      </View>
+      <View style={ReelStyles.photoDots} pointerEvents="none">
+        {uris.map((uri, i) => (
+          <View key={`${i}-${uri}`} style={[ReelStyles.photoDot, i === index && ReelStyles.photoDotActive]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, muted, commentCount, onToggleMute, onAuthorPress, onDelete, onOpenComments }: {
   reel: Reel;
+  muted: boolean;
+  onToggleMute: () => void;
   height: number;
   playing: boolean;
-  /** Only reels near the one on screen hold a player: phones have few video decoders (one for 4K) */
   loaded: boolean;
   commentCount: number;
   onAuthorPress?: (reel: Reel) => void;
@@ -63,12 +100,24 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, c
   onOpenComments: (reel: Reel) => void;
 }) {
   const photo = isPhotoReel(reel);
-  const player = useVideoPlayer(loaded && !photo ? reelMediaUrl(reel) : null, (p) => {
+  // Cached on disk, so scrolling back to a reel doesn't download it again
+  const player = useVideoPlayer(loaded && !photo ? { uri: reelMediaUrl(reel), useCaching: true } : null, (p) => {
     p.loop = true;
+    p.muted = muted;
   });
   const [pausedByUser, setPausedByUser] = useState(false);
   const [loading, setLoading] = useState(true);
   const [captionOpen, setCaptionOpen] = useState(false);
+  // Suggested reels (from people I don't follow) get a Follow button
+  const [followed, setFollowed] = useState(false);
+  const follow = async () => {
+    setFollowed(true);
+    try {
+      await followUser(reel.author.phone);
+    } catch {
+      setFollowed(false);
+    }
+  };
 
   // Likes: shown at once, then corrected by the server's count
   const [liked, setLiked] = useState(!!reel.likedByMe);
@@ -138,6 +187,19 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, c
     return () => sub.remove();
   }, [player]);
 
+  useEffect(() => {
+    player.muted = muted;
+  }, [player, muted]);
+
+  // Upcoming reels fetch only their first seconds (instant start without spending data on
+  // videos the user may skip); the one on screen buffers further ahead
+  useEffect(() => {
+    if (photo) return;
+    player.bufferOptions = playing
+      ? { preferredForwardBufferDuration: 20, minBufferForPlayback: 2 }
+      : { preferredForwardBufferDuration: 4, minBufferForPlayback: 1 };
+  }, [photo, playing, player]);
+
   // Play only while on screen; scrolling away resets a manual pause
   useEffect(() => {
     if (photo) return;
@@ -151,12 +213,20 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, c
   const author = reel.author;
   return (
     <View style={[ReelStyles.item, { height }]}>
-      <Pressable style={{ flex: 1 }} onPress={onTap}>
-        {photo ? (
-          <PhotoReel uri={reelMediaUrl(reel)} height={height} />
-        ) : (
-          <VideoView player={player} style={ReelStyles.video} contentFit="cover" nativeControls={false} />
-        )}
+      {photo ? (
+        <PhotoCarousel uris={reelPhotos(reel)} height={height} onTap={onTap} />
+      ) : (
+        <VideoView
+          player={player}
+          style={ReelStyles.video}
+          // contain: the whole frame stays on screen (cover cropped the sides on tall phones)
+          contentFit="contain"
+          nativeControls={false}
+        />
+      )}
+      {/* Videos: a tap layer over the media, since the native video view swallows touches on Android.
+          Photos handle taps themselves, so the carousel can still be swiped. */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onTap} pointerEvents={photo ? "none" : "auto"}>
         {!photo && loading && playing && (
           <View style={ReelStyles.center} pointerEvents="none"><ActivityIndicator color="#FFFFFF" size="large" /></View>
         )}
@@ -172,19 +242,33 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, c
         </View>
       </Pressable>
 
+      {!photo && (
+        <TouchableOpacity style={ReelStyles.muteBtn} onPress={onToggleMute} hitSlop={10} accessibilityLabel={muted ? "Turn sound on" : "Turn sound off"}>
+          <Ionicons name={muted ? "volume-mute" : "volume-high"} size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
       {/* Author + caption */}
       <View style={ReelStyles.bottomInfo}>
-        <TouchableOpacity style={ReelStyles.authorRow} onPress={() => onAuthorPress?.(reel)} disabled={!onAuthorPress} activeOpacity={0.7}>
-          <View style={ReelStyles.authorAvatar}>
-            {author?.profile_image
-              ? <Image source={{ uri: author.profile_image }} style={{ width: 36, height: 36 }} />
-              : <Ionicons name="person" size={18} color="#BBBBBB" />}
-          </View>
-          <View>
-            <Text style={[ReelStyles.authorName, ReelStyles.shadow]}>{reel.isMine ? "You" : displayName(author)}</Text>
-            {author?.username && <Text style={[ReelStyles.authorHandle, ReelStyles.shadow]}>@{author.username}</Text>}
-          </View>
-        </TouchableOpacity>
+        {reel.suggested && <Text style={[ReelStyles.suggestedLabel, ReelStyles.shadow]}>Suggested for you</Text>}
+        <View style={ReelStyles.authorLine}>
+          <TouchableOpacity style={ReelStyles.authorRow} onPress={() => onAuthorPress?.(reel)} disabled={!onAuthorPress} activeOpacity={0.7}>
+            <View style={ReelStyles.authorAvatar}>
+              {author?.profile_image
+                ? <Image source={{ uri: author.profile_image }} style={{ width: 36, height: 36 }} />
+                : <Ionicons name="person" size={18} color="#BBBBBB" />}
+            </View>
+            <View>
+              <Text style={[ReelStyles.authorName, ReelStyles.shadow]}>{reel.isMine ? "You" : displayName(author)}</Text>
+              {author?.username && <Text style={[ReelStyles.authorHandle, ReelStyles.shadow]}>@{author.username}</Text>}
+            </View>
+          </TouchableOpacity>
+          {reel.suggested && (
+            <TouchableOpacity style={[ReelStyles.reelFollowBtn, followed && ReelStyles.reelFollowBtnDone]} onPress={follow} disabled={followed}>
+              <Text style={ReelStyles.reelFollowText}>{followed ? "Following" : "Follow"}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         {!!reel.caption && (
           <Text style={[ReelStyles.caption, ReelStyles.shadow]} numberOfLines={captionOpen ? undefined : 2} onPress={() => setCaptionOpen((v) => !v)}>
             {reel.caption}
@@ -218,7 +302,6 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, c
   );
 });
 
-// ── Pager ──────────────────────────────────────────────────────────────────
 export default function ReelsPager({
   reels, initialIndex = 0, focused, loadingMore, refreshing, onRefresh, onEndReached, onAuthorPress, onDelete,
 }: {
@@ -237,6 +320,8 @@ export default function ReelsPager({
   // Comments sheet (pauses the reel), and comment counts updated from it
   const [commentsFor, setCommentsFor] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [muted, setMuted] = useState(false);
+  const toggleMute = useCallback(() => setMuted((m) => !m), []);
   const openComments = useCallback((reel: Reel) => setCommentsFor(reel._id), []);
   const onCommentCount = useCallback((id: string, n: number) => setCommentCounts((prev) => (prev[id] === n ? prev : { ...prev, [id]: n })), []);
 
@@ -250,13 +335,16 @@ export default function ReelsPager({
       reel={item}
       height={height}
       playing={focused && index === activeIndex && !commentsFor}
-      loaded={focused && Math.abs(index - activeIndex) <= 1}
+      // The one on screen and the next two hold players; the previous one replays from the cache
+      loaded={focused && index >= activeIndex && index <= activeIndex + 2}
+      muted={muted}
+      onToggleMute={toggleMute}
       commentCount={commentCounts[item._id] ?? item.commentCount ?? 0}
       onAuthorPress={onAuthorPress}
       onDelete={onDelete}
       onOpenComments={openComments}
     />
-  ), [height, focused, activeIndex, commentsFor, commentCounts, onAuthorPress, onDelete, openComments]);
+  ), [height, focused, activeIndex, muted, toggleMute, commentsFor, commentCounts, onAuthorPress, onDelete, openComments]);
 
   return (
     <View style={ReelStyles.pager} onLayout={(e) => setHeight(Math.round(e.nativeEvent.layout.height))}>
@@ -274,8 +362,8 @@ export default function ReelsPager({
           initialScrollIndex={Math.min(initialIndex, Math.max(reels.length - 1, 0))}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
-          // Keep only the visible reel and its neighbours mounted (each one holds a video player)
-          windowSize={3}
+          // Mount the visible reel and two either side (only those ahead get a video player)
+          windowSize={5}
           initialNumToRender={1}
           maxToRenderPerBatch={2}
           removeClippedSubviews

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { verifyUser } from "../middlewares/verifyUser";
-import { createReel, deleteReel, getFeed, getReelUploadUrl, getUserReels } from "../controllers/reels/reels.controller";
+import { createReel, deleteReel, getFeed, getReelUploadUrl, getSuggested, getUserReels } from "../controllers/reels/reels.controller";
 import {
   addComment, deleteComment, getComments, likeReel, shareReel, unlikeReel,
 } from "../controllers/reels/reelEngagement.controller";
@@ -10,6 +10,7 @@ const router = Router();
 router.post("/upload-url", verifyUser, getReelUploadUrl);
 router.post("/", verifyUser, createReel);
 router.get("/feed", verifyUser, getFeed);
+router.get("/suggested", verifyUser, getSuggested);
 router.get("/user/:phone", verifyUser, getUserReels);
 router.delete("/:id", verifyUser, deleteReel);
 

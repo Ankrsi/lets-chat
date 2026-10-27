@@ -24,7 +24,6 @@ const OFFLINE_TYPES: Record<string, string> = {
 
 const CALL_TYPES = ["audio_call", "video_call", "group_audio_call", "group_video_call"];
 
-/** Adds an event to the member's offline queue (one round trip) */
 const enqueue = (member: string, type: string, data: any) => {
   const key = `offline:messages:${member}`;
   return redisPublisher.multi()

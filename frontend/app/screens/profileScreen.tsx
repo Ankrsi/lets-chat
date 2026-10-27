@@ -30,7 +30,6 @@ type EditField = "name" | "about" | "username" | "email";
 
 const ABOUT_MAX = 140;
 
-// ── Field row ──────────────────────────────────────────────────────────────
 function Field({ icon, label, value, placeholder, onPress }: {
     icon: IoniconsName;
     label: string;
@@ -54,7 +53,6 @@ function Field({ icon, label, value, placeholder, onPress }: {
     );
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
     const router = useRouter();
     const [user, setUser] = useState<Partial<AuthUser>>({});

@@ -6,6 +6,7 @@ import { SocketProvider } from "@/contexts/SocketContext";
 import { initDB } from "@/db/initDB";
 import { requestAllPermissions } from '@/utils/permissions';
 import { AuthAPI } from '@/utils/api';
+import { initVideoCache } from '@/utils/videoCache';
 import { colors } from '@/theme';
 import notifee from '@notifee/react-native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -145,6 +146,7 @@ function RootLayoutContent() {
     // is on screen now, so hand over to it. Dev builds hid it for us, release builds never did.
     SplashScreen.hideAsync().catch(() => undefined);
     initDB();
+    initVideoCache();
     const unsubscribe = navRef.addListener("state", () => {
       const route = navRef.getCurrentRoute();
       if (route) currentScreen = route.name;
@@ -193,6 +195,7 @@ function RootLayoutContent() {
               <Stack.Screen name="screens/reels/uploadReel" options={{ title: "New Reel", headerShown: false, animation: "slide_from_bottom" }} />
               <Stack.Screen name="screens/reels/userProfile" options={{ title: "Profile", headerShown: false }} />
               <Stack.Screen name="screens/reels/findPeople" options={{ title: "Find People", headerShown: false }} />
+              <Stack.Screen name="screens/reels/followList" options={{ title: "Followers", headerShown: false }} />
             </Stack>
           </FriendContactProvider>
         </SocketProvider>
