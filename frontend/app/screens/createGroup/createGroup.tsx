@@ -1,4 +1,4 @@
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 import { saveConversation, updateConversationLastMessage } from "@/db/conversationRepo";
 import { saveMessage } from "@/db/messageRepo";
 import { CHATAPI } from "@/utils/api";
@@ -107,7 +107,7 @@ export default function CreateGroup() {
 
     return (
         <SafeAreaView style={CreateGroupStyles.safeArea}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+            <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
             <View style={CreateGroupStyles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={CreateGroupStyles.backBtn}>

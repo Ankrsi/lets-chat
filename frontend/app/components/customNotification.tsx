@@ -1,7 +1,10 @@
 import notifee, { AndroidCategory, AndroidImportance, AndroidStyle, AndroidVisibility } from '@notifee/react-native';
+import { messageNotificationsOn } from '@/utils/notificationSettings';
 
 export default async function CustomNotification(data: any) {
     if (!data) return;
+    // Turned off in Settings → Notifications
+    if (!messageNotificationsOn()) return;
     // Needed to route the tap to the right room (also after a cold start). Notifee only accepts string values.
     const notifData: Record<string, string> = {};
     Object.entries(data).forEach(([k, v]) => {

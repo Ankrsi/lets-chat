@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getAccessToken, getRefreshToken, saveTokens, clearTokens } from "@/utils/tokens";
 import { router } from "expo-router";
 
 const BASE_URLS: any = {
@@ -28,7 +29,7 @@ export const apiErrorMessage = (err: any, fallback = "Something went wrong. Try 
 
 // Ends the local session when the refresh token is no longer accepted
 const clearSession = async () => {
-  await AsyncStorage.multiRemove(["token", "refreshToken"]);
+  await clearTokens();
   if (router.canDismiss()) router.dismissAll(); // nothing to dismiss when already at the first screen
   router.replace("/screens/login");
 };
@@ -55,7 +56,7 @@ let refreshing: Promise<string | null> | null = null;
 const refreshAccessToken = () => {
   if (!refreshing) {
     refreshing = (async () => {
-      const refreshToken = await AsyncStorage.getItem("refreshToken");
+      const refreshToken = await getRefreshToken();
       if (!refreshToken) return null;
       const resp = await fetch(`${BASE_URLS.auth}/auth/get-new-access-token`, {
         method: 'POST',
@@ -67,8 +68,7 @@ const refreshAccessToken = () => {
       if (resp.status === 401) return null; // revoked (logout, login on another device) or expired
       if (!resp.ok) throw new ApiError("Could not refresh session", resp.status);
       const respJson = await resp.json();
-      await AsyncStorage.setItem("token", respJson.data.accessToken);
-      await AsyncStorage.setItem("refreshToken", respJson.data.refreshToken);
+      await saveTokens(respJson.data.accessToken, respJson.data.refreshToken);
       return respJson.data.accessToken as string;
     })().finally(() => {
       refreshing = null;
@@ -82,7 +82,7 @@ const createFetchClient = (type = "auth") => {
   const baseURL = BASE_URLS[type];
 
   const request = async (endpoint: any, method: any, body: any, customHeaders = {}) => {
-    const token = await AsyncStorage.getItem("token");
+    const token = await getAccessToken();
 
     let headers: any = {};
 
@@ -145,4 +145,3 @@ const createFetchClient = (type = "auth") => {
 export const AuthAPI = createFetchClient("auth");
 export const CHATAPI = createFetchClient("chat");
 export const ENCRYPTAPI = createFetchClient("encrypt");
-export const PLAMAPI = createFetchClient("plam");

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { colors } from "@/theme";
 import {
     View, Text, TextInput, TouchableOpacity,
     FlatList, StyleSheet, Dimensions,
@@ -140,7 +141,7 @@ export default function EmojiPicker({ onEmojiSelect, recentEmojis, onAddRecent }
 const styles = StyleSheet.create({
     container: {
         height: 300,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderTopWidth: 0.5,
         borderTopColor: '#e0e0e0',
     },
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
     searchBox: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#F0F2F5',
+        backgroundColor: colors.surfaceAlt,
         borderRadius: 20,
         paddingHorizontal: 12,
         height: 34,
@@ -163,7 +164,7 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         fontSize: 13,
-        color: '#111',
+        color: colors.text,
         paddingVertical: 0,
     },
 
@@ -207,7 +208,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         borderTopWidth: 0.5,
         borderTopColor: '#F0F0F0',
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
     },
     tab: {
         flex: 1,

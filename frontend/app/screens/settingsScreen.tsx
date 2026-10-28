@@ -3,9 +3,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
+import { reloadAppAsync } from "expo";
 import {
+    Alert,
+    Linking,
+    Pressable,
     ScrollView,
     StatusBar,
+    StyleSheet,
     Switch,
     Text,
     TouchableOpacity,
@@ -13,8 +18,17 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SettingsStyle, styles } from "../styles";
-import { colors } from "@/theme";
+import { colors, fontSizeSetting, FontSizeSetting, saveAppearance, statusBarStyle, themeSetting, ThemeSetting } from "@/theme";
+import BottomSheet from "@/app/components/BottomSheet";
+import { canUseAppLock, isAppLockOn, setAppLock, unlockWithBiometrics } from "@/utils/appLock";
 import { logout } from "@/utils/socket";
+import { AuthAPI, apiErrorMessage, CHATAPI } from "@/utils/api";
+import { getGlobalSocket } from "@/utils/globalRefs";
+import { onlineStatusOn, readReceiptsOn, setOnlineStatus, setReadReceipts } from "@/utils/privacy";
+import { messageNotificationsOn, setMessageNotifications } from "@/utils/notificationSettings";
+import { cacheSize, clearCache } from "@/utils/storage";
+import { formatBytes } from "@/utils/media";
+import notifee from "@notifee/react-native";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -94,14 +108,106 @@ function Divider() {
     return <View style={SettingsStyle.divider} />;
 }
 
+type Choice = { value: string; label: string; sub: string };
+// A bottom sheet with a few choices (theme, font size, profile photo)
+type ChoiceSheet = { title: string; options: Choice[]; value: string; note?: string; onPick: (value: string) => void };
+
+const THEME_OPTIONS: Choice[] = [
+    { value: "system", label: "System default", sub: "Follows your phone's setting" },
+    { value: "light", label: "Light", sub: "Light background" },
+    { value: "dark", label: "Dark", sub: "Dark background, easier at night" },
+];
+const FONT_OPTIONS: Choice[] = [
+    { value: "small", label: "Small", sub: "More fits on screen" },
+    { value: "medium", label: "Medium", sub: "Default size" },
+    { value: "large", label: "Large", sub: "Easier to read" },
+];
+const PHOTO_OPTIONS: Choice[] = [
+    { value: "everyone", label: "Everyone", sub: "Anyone on the app can see your photo" },
+    { value: "nobody", label: "Nobody", sub: "Your photo is hidden from everyone" },
+];
+const labelOf = (options: Choice[], value: string) =>
+    options.find((o) => o.value === value)?.label ?? "";
+
 export default function SettingsScreen() {
     const router = useRouter();
     const [info, setInfo] = useState<any>({});
-    const [notifications, setNotifications] = useState(true);
-    const [readReceipts, setReadReceipts] = useState(true);
-    const [lastSeen, setLastSeen] = useState(true);
-    const [biometric, setBiometric] = useState(false);
-    const [darkMode, setDarkMode] = useState(false);
+    const [notifications, setNotifications] = useState(messageNotificationsOn);
+    const [readReceipts, setReadReceiptsState] = useState(readReceiptsOn);
+    const [onlineStatus, setOnlineStatusState] = useState(onlineStatusOn);
+    const [photoVisibility, setPhotoVisibility] = useState("everyone");
+    const [blockedCount, setBlockedCount] = useState<number | null>(null);
+    const [sheet, setSheet] = useState<ChoiceSheet | null>(null);
+    const [cacheBytes, setCacheBytes] = useState(0);
+    const [biometric, setBiometric] = useState(isAppLockOn);
+    const [twoStep, setTwoStep] = useState(false);
+
+    // Confirm with a fingerprint both ways, so someone holding an unlocked phone can't just switch it off
+    const toggleBiometric = async (on: boolean) => {
+        if (on && !(await canUseAppLock())) {
+            Alert.alert("Set up a screen lock first", "Add a fingerprint, face or PIN in your phone's settings to use Biometric Lock.");
+            return;
+        }
+        if (!(await unlockWithBiometrics(on ? "Turn on Biometric Lock" : "Turn off Biometric Lock"))) return;
+        setAppLock(on);
+        setBiometric(on);
+    };
+    // Theme and font size: styles are built once at startup, so the app restarts to apply them
+    const changeAppearance = (theme: ThemeSetting, fontSize: FontSizeSetting) => {
+        if (theme === themeSetting && fontSize === fontSizeSetting) return;
+        saveAppearance(theme, fontSize);
+        setTimeout(() => reloadAppAsync("Appearance changed").catch(() => undefined), 250);
+    };
+
+    // Notifications
+    const toggleNotifications = (on: boolean) => {
+        setMessageNotifications(on);
+        setNotifications(on);
+    };
+    // Message tone: Android's sound setting for chat notifications
+    const openMessageTone = () =>
+        notifee.openNotificationSettings("messages").catch(() => Alert.alert("Couldn't open sound settings"));
+    // Calls ring with the phone's own ringtone, so this opens the phone's Sound settings
+    const openCallRingtone = () =>
+        Linking.sendIntent("android.settings.SOUND_SETTINGS").catch(() => Linking.openSettings());
+
+    // Storage: how much the cache uses, and a button to clear it
+    const askClearCache = () =>
+        Alert.alert(
+            "Clear cache?",
+            `Frees ${formatBytes(cacheBytes) ?? "0 MB"}. Photos and videos download again when you open them. Your chats and messages are not deleted.`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Clear",
+                    style: "destructive",
+                    onPress: async () => {
+                        await clearCache();
+                        setCacheBytes(cacheSize());
+                    },
+                },
+            ],
+        );
+
+    // Privacy
+    const toggleReadReceipts = (on: boolean) => {
+        setReadReceipts(on);
+        setReadReceiptsState(on);
+    };
+    const toggleOnlineStatus = (on: boolean) => {
+        setOnlineStatus(on);
+        setOnlineStatusState(on);
+        getGlobalSocket()?.emit("privacy:online", { show: on }); // the server hides you right away
+    };
+    const changePhotoVisibility = async (value: string) => {
+        try {
+            await AuthAPI.patch("/profile/me", { photoVisibility: value });
+            await AsyncStorage.setItem("photoVisibility", value);
+            setPhotoVisibility(value);
+        } catch (err) {
+            Alert.alert("Couldn't save", apiErrorMessage(err));
+        }
+    };
 
     // Re-read on focus so edits made on the profile screen show up when coming back
     useFocusEffect(useCallback(() => {
@@ -110,13 +216,19 @@ export default function SettingsScreen() {
                 await AsyncStorage.multiGet(["username", "userHandle", "first_name", "last_name", "about", "profile"])
             ).map(([, v]) => v || "");
             setInfo({ phone, handle, first_name, last_name, about, profile });
+            setTwoStep((await AsyncStorage.getItem("twoStepEnabled")) === "1");
+            setPhotoVisibility((await AsyncStorage.getItem("photoVisibility")) || "everyone");
+            setCacheBytes(cacheSize());
+            CHATAPI.get("/chats/getblockedUser")
+                .then((res) => setBlockedCount((res.data.blockedNo ?? []).length))
+                .catch(() => setBlockedCount(null));
         })();
     }, []));
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
             <View style={SettingsStyle.root}>
-                <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+                <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
                 {/* ── Header ── */}
                 <View style={SettingsStyle.header}>
@@ -160,14 +272,14 @@ export default function SettingsScreen() {
                         <SettingToggle
                             icon="notifications"
                             iconColor="#F59E0B"
-                            label="Push Notifications"
+                            label="Message Notifications"
                             value={notifications}
-                            onToggle={setNotifications}
+                            onToggle={toggleNotifications}
                         />
                         <Divider />
-                        <SettingRow icon="musical-note" iconColor="#A855F7" label="Message Tones" value="Default" />
+                        <SettingRow icon="musical-note" iconColor="#A855F7" label="Message Tone" onPress={openMessageTone} />
                         <Divider />
-                        <SettingRow icon="call" iconColor="#10B981" label="Call Ringtone" value="Default" />
+                        <SettingRow icon="call" iconColor="#10B981" label="Call Ringtone" onPress={openCallRingtone} />
                     </Section>
 
                     {/* ── Privacy ── */}
@@ -177,20 +289,37 @@ export default function SettingsScreen() {
                             iconColor="#3B82F6"
                             label="Read Receipts"
                             value={readReceipts}
-                            onToggle={setReadReceipts}
+                            onToggle={toggleReadReceipts}
                         />
                         <Divider />
                         <SettingToggle
                             icon="time"
                             iconColor={colors.primary}
-                            label="Last Seen"
-                            value={lastSeen}
-                            onToggle={setLastSeen}
+                            label="Show Online Status"
+                            value={onlineStatus}
+                            onToggle={toggleOnlineStatus}
                         />
                         <Divider />
-                        <SettingRow icon="image" iconColor="#06B6D4" label="Profile Photo" value="Everyone" />
+                        <SettingRow
+                            icon="image"
+                            iconColor="#06B6D4"
+                            label="Profile Photo"
+                            value={labelOf(PHOTO_OPTIONS, photoVisibility)}
+                            onPress={() => setSheet({
+                                title: "Who can see my profile photo",
+                                options: PHOTO_OPTIONS,
+                                value: photoVisibility,
+                                onPick: changePhotoVisibility,
+                            })}
+                        />
                         <Divider />
-                        <SettingRow icon="ban" iconColor={colors.danger} label="Blocked Contacts" value="0" />
+                        <SettingRow
+                            icon="ban"
+                            iconColor={colors.danger}
+                            label="Blocked Contacts"
+                            value={blockedCount === null ? undefined : String(blockedCount)}
+                            onPress={() => router.push("/screens/blockedContacts")}
+                        />
                     </Section>
 
                     {/* ── Backup/Restore ── */}
@@ -205,34 +334,52 @@ export default function SettingsScreen() {
                             iconColor={colors.primary}
                             label="Biometric Lock"
                             value={biometric}
-                            onToggle={setBiometric}
+                            onToggle={toggleBiometric}
                         />
                         <Divider />
-                        <SettingRow icon="shield-checkmark" iconColor="#10B981" label="Two-Step Verification" value="Off" />
+                        <SettingRow
+                            icon="shield-checkmark"
+                            iconColor="#10B981"
+                            label="Two-Step Verification"
+                            value={twoStep ? "On" : "Off"}
+                            onPress={() => router.push("/screens/twoStep")}
+                        />
                     </Section>
 
                     {/* ── Appearance ── */}
                     <Section title="APPEARANCE">
-                        <SettingToggle
+                        <SettingRow
                             icon="moon"
                             iconColor={colors.primary}
-                            label="Dark Mode"
-                            value={darkMode}
-                            onToggle={setDarkMode}
+                            label="Theme"
+                            value={labelOf(THEME_OPTIONS, themeSetting)}
+                            onPress={() => setSheet({
+                                title: "Theme",
+                                options: THEME_OPTIONS,
+                                value: themeSetting,
+                                note: "The app restarts to apply the change.",
+                                onPick: (v) => changeAppearance(v as ThemeSetting, fontSizeSetting),
+                            })}
                         />
                         <Divider />
-                        <SettingRow icon="image" iconColor="#06B6D4" label="Chat Wallpaper" />
-                        <Divider />
-                        <SettingRow icon="text" iconColor="#F59E0B" label="Font Size" value="Medium" />
+                        <SettingRow
+                            icon="text"
+                            iconColor="#F59E0B"
+                            label="Font Size"
+                            value={labelOf(FONT_OPTIONS, fontSizeSetting)}
+                            onPress={() => setSheet({
+                                title: "Font size",
+                                options: FONT_OPTIONS,
+                                value: fontSizeSetting,
+                                note: "The app restarts to apply the change.",
+                                onPick: (v) => changeAppearance(themeSetting, v as FontSizeSetting),
+                            })}
+                        />
                     </Section>
 
                     {/* ── Storage ── */}
-                    <Section title="STORAGE & DATA">
-                        <SettingRow icon="save" iconColor="#10B981" label="Manage Storage" value="1.2 GB" />
-                        <Divider />
-                        <SettingRow icon="wifi" iconColor="#3B82F6" label="Network Usage" />
-                        <Divider />
-                        <SettingRow icon="download" iconColor="#A855F7" label="Auto-Download Media" value="Wi-Fi" />
+                    <Section title="STORAGE">
+                        <SettingRow icon="trash-bin" iconColor="#10B981" label="Clear Cache" value={formatBytes(cacheBytes) ?? "0 MB"} onPress={askClearCache} />
                     </Section>
 
                     {/* ── Help ── */}
@@ -265,6 +412,43 @@ export default function SettingsScreen() {
                     <Text style={SettingsStyle.version}>ChatApp v1.0.0</Text>
                 </ScrollView>
             </View>
+
+            <BottomSheet visible={!!sheet} onClose={() => setSheet(null)} sheetHeight={330}>
+                <Text style={sheetStyles.title}>{sheet?.title}</Text>
+                {sheet?.options.map((o) => {
+                    const selected = o.value === sheet.value;
+                    return (
+                        <Pressable
+                            key={o.value}
+                            style={[sheetStyles.option, selected && sheetStyles.optionSelected]}
+                            onPress={() => {
+                                setSheet(null);
+                                if (!selected) sheet.onPick(o.value);
+                            }}
+                        >
+                            <View style={{ flex: 1 }}>
+                                <Text style={sheetStyles.optionLabel}>{o.label}</Text>
+                                <Text style={sheetStyles.optionSub}>{o.sub}</Text>
+                            </View>
+                            <Ionicons
+                                name={selected ? "radio-button-on" : "radio-button-off"}
+                                size={22}
+                                color={selected ? colors.primary : colors.textMuted}
+                            />
+                        </Pressable>
+                    );
+                })}
+                {!!sheet?.note && <Text style={sheetStyles.note}>{sheet.note}</Text>}
+            </BottomSheet>
         </SafeAreaView>
     );
 }
+
+const sheetStyles = StyleSheet.create({
+    title: { fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 12 },
+    option: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
+    optionSelected: { backgroundColor: colors.primarySoft },
+    optionLabel: { fontSize: 15, fontWeight: "600", color: colors.text },
+    optionSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+    note: { fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: 12 },
+});

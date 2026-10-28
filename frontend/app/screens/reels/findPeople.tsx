@@ -1,4 +1,4 @@
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 import { ReelStyles, SettingsStyle } from "@/app/styles";
 import { AuthAPI } from "@/utils/api";
 import { getGlobalUsername } from "@/utils/globalRefs";
@@ -96,7 +96,7 @@ export default function FindPeopleScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
       <View style={SettingsStyle.header}>
         <TouchableOpacity style={SettingsStyle.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />

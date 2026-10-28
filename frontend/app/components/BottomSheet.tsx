@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { colors } from "@/theme";
 import { Animated, Modal, Pressable, StyleSheet } from "react-native";
 
 export default function BottomSheet({ visible, onClose, sheetHeight = 350, children }: any) {
@@ -52,7 +53,7 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: "#ffffff",
+        backgroundColor: colors.surface,
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         padding: 20,

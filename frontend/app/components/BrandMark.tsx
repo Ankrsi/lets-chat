@@ -1,12 +1,14 @@
 import { colors, gradients, shadow } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import { StyleSheet } from "react-native";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
-export default function BrandMark({ icon = "chatbubbles", size = 64 }: { icon?: IoniconsName; size?: number }) {
+// No icon: the app logo
+export default function BrandMark({ icon, size = 64 }: { icon?: IoniconsName; size?: number }) {
   return (
     <LinearGradient
       colors={gradients.primary}
@@ -14,7 +16,9 @@ export default function BrandMark({ icon = "chatbubbles", size = 64 }: { icon?: 
       end={{ x: 1, y: 1 }}
       style={[styles.mark, { width: size, height: size, borderRadius: size * 0.32 }]}
     >
-      <Ionicons name={icon} size={size * 0.5} color={colors.textOnPrimary} />
+      {icon
+        ? <Ionicons name={icon} size={size * 0.5} color={colors.textOnPrimary} />
+        : <Image source={require("@/assets/images/brand-mark.png")} style={{ width: size * 0.62, height: size * 0.62 }} />}
     </LinearGradient>
   );
 }

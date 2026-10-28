@@ -2,7 +2,7 @@ import { Platform, StyleSheet } from "react-native";
 import { colors, font, radius, shadow } from "@/theme";
 
 export const startStyle = StyleSheet.create({
-    root: { flex: 1, backgroundColor: '#FFFFFF' },
+    root: { flex: 1, backgroundColor: colors.surface },
 
     // Green top
     topSection: {
@@ -27,7 +27,7 @@ export const startStyle = StyleSheet.create({
         width: 118,
         height: 118,
         borderRadius: 59,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.surface,
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#000',
@@ -334,7 +334,7 @@ export const styles = StyleSheet.create({
         right: 10,
         top: 40,
         width: 180,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         paddingVertical: 10,
         borderRadius: 10,
         elevation: 5,
@@ -350,7 +350,7 @@ export const styles = StyleSheet.create({
     },
     popupText: {
         fontSize: 16,
-        color: "#333",
+        color: colors.text,
     },
 
     /* SEARCH BAR */
@@ -477,7 +477,7 @@ export const styles = StyleSheet.create({
         marginTop: "10%"
     },
     menuBox: {
-        backgroundColor: "white",
+        backgroundColor: colors.surface,
         marginTop: 60,
         marginRight: 10,
         borderRadius: 6,
@@ -506,7 +506,7 @@ export const styles = StyleSheet.create({
         flex: 1,
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: "#fff",
+        backgroundColor: colors.surface,
         borderRadius: 25,
         paddingHorizontal: 10,
         elevation: 2,
@@ -516,14 +516,14 @@ export const styles = StyleSheet.create({
         paddingVertical: 15,
         paddingHorizontal: 10,
         fontSize: 15,
-        color: "#000",
+        color: colors.text,
         maxHeight: 100
     },
     optionBox: {
         width: "100%",
         position: "absolute",
         bottom: 60,
-        backgroundColor: "#fff",
+        backgroundColor: colors.surface,
         borderRadius: 15,
         padding: 12,
         elevation: 6,
@@ -582,7 +582,7 @@ export const styles = StyleSheet.create({
     contactNameBottomSheet: {
         fontSize: 16,
         fontWeight: "500",
-        color: "#000"
+        color: colors.text
     },
     contactSubTextBottomSheet: {
         fontSize: 13,
@@ -606,7 +606,7 @@ export const styles = StyleSheet.create({
 
     contactSelectedUserNameBottomSheet: {
         fontSize: 12,
-        color: "#000",
+        color: colors.text,
         textAlign: "center",
         width: 60,
     },
@@ -690,7 +690,7 @@ export const styles = StyleSheet.create({
         width: 115,
         height: 115,
         borderRadius: 60,
-        backgroundColor: "#eaeaea",
+        backgroundColor: colors.surfaceAlt,
         justifyContent: "center",
         alignItems: "center",
         overflow: "hidden",
@@ -766,7 +766,7 @@ export const styles = StyleSheet.create({
         alignItems: "center"
     },
     chatRoomVideoLog: {
-        backgroundColor: "#fff",
+        backgroundColor: colors.surface,
         padding: 10,
         borderRadius: 10,
         marginVertical: 5,
@@ -796,7 +796,7 @@ export const styles = StyleSheet.create({
     },
     systemMessage: {
         alignSelf: "center",
-        backgroundColor: "#f0f0f0",
+        backgroundColor: colors.surfaceAlt,
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 18,
@@ -965,7 +965,7 @@ export const styles = StyleSheet.create({
     roomMapCard: {
         borderRadius: 14,
         overflow: "hidden",
-        backgroundColor: "#f2f2f2",
+        backgroundColor: colors.surfaceAlt,
         elevation: 2,
     },
     roomMapMap: {
@@ -2138,7 +2138,7 @@ export const RoomStyles = StyleSheet.create({
         height: 120,
     },
     roomMapFooter: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         padding: 6,
     },
     roomMapTitle: {
@@ -2194,7 +2194,7 @@ export const RoomStyles = StyleSheet.create({
         paddingRight: 12,
     },
     menuBox: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderRadius: 8,
         paddingVertical: 6,
         paddingHorizontal: 4,
@@ -2460,7 +2460,7 @@ export const ReelStyles = StyleSheet.create({
     disabled: { opacity: 0.45 },
 
     // Profile screen
-    profileHeader: { alignItems: 'center', paddingTop: 20, paddingBottom: 16, backgroundColor: '#FFFFFF' },
+    profileHeader: { alignItems: 'center', paddingTop: 20, paddingBottom: 16, backgroundColor: colors.surface },
     profileAvatar: { width: 92, height: 92, borderRadius: 46, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
     profileName: { fontSize: 19, fontWeight: '800', color: colors.text, marginTop: 10 },
     profileHandle: { fontSize: 14, color: colors.primary, marginTop: 2, fontWeight: '600' },
@@ -2469,9 +2469,9 @@ export const ReelStyles = StyleSheet.create({
     statValue: { fontSize: 18, fontWeight: '800', color: colors.text },
     statLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
     followBtn: { marginTop: 16, backgroundColor: colors.primary, paddingVertical: 10, paddingHorizontal: 40, borderRadius: 22 },
-    followingBtn: { backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#CCCCCC' },
+    followingBtn: { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border },
     followText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-    followingText: { color: '#333333' },
+    followingText: { color: colors.text },
     gridTile: { flex: 1 / 3, aspectRatio: 9 / 16, margin: 1, backgroundColor: '#1B1B1B', justifyContent: 'flex-end', padding: 6 },
     gridCaption: { color: '#FFFFFF', fontSize: 11 },
     gridPlay: { position: 'absolute', top: 6, left: 6 },
@@ -2479,9 +2479,9 @@ export const ReelStyles = StyleSheet.create({
     lockedText: { fontSize: 15, color: colors.textSecondary, marginTop: 10, textAlign: 'center' },
 
     // Find people
-    searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', margin: 12, borderRadius: 24, paddingHorizontal: 14 },
+    searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, margin: 12, borderRadius: 24, paddingHorizontal: 14 },
     searchInput: { flex: 1, fontSize: 15, color: colors.text, paddingVertical: 10 },
-    personRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 12 },
+    personRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingHorizontal: 16, paddingVertical: 12 },
     personAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primarySoft, marginRight: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
     personName: { fontSize: 15, fontWeight: '600', color: colors.text },
     personSub: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },

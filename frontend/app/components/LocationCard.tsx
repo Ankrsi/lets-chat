@@ -79,9 +79,9 @@ export default function LocationCard({ content, onLongPress }: Props) {
 
 const styles = StyleSheet.create({
   card: { width: 240, borderRadius: 14, overflow: "hidden", backgroundColor: colors.surface },
-  map: { height: 130, backgroundColor: "#E8EEF6", overflow: "hidden", alignItems: "center", justifyContent: "center" },
-  road: { position: "absolute", height: 10, backgroundColor: "#FFFFFF", borderRadius: 5 },
-  roadThin: { height: 6, backgroundColor: "#F8FAFC" },
+  map: { height: 130, backgroundColor: colors.surfaceAlt, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+  road: { position: "absolute", height: 10, backgroundColor: colors.surface, borderRadius: 5 },
+  roadThin: { height: 6, backgroundColor: colors.background },
   park: { position: "absolute", width: 54, height: 34, borderRadius: 10, backgroundColor: "#D1FAE5" },
   water: { position: "absolute", width: 70, height: 30, borderRadius: 15, backgroundColor: "#DBEAFE" },
   pinWrap: { alignItems: "center", justifyContent: "flex-end", height: 50 },

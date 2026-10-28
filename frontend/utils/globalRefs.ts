@@ -6,6 +6,7 @@ export const globalRefs = {
   isSocketConnected: false as boolean | false,
   notifyDbUpdate: null as (() => void) | null,
   setNewLogin: null as (() => void) | null,
+  openRoomId: null as string | null, // the chat on screen right now
 };
 
 export const setGlobalSocket = (socket: Socket | null) => {
@@ -27,6 +28,11 @@ export const setGlobalDbTick = () => {
 export const setGlobalNewLogin = (newLogin: { show: boolean, logout: boolean }) => {
   globalRefs.setNewLogin?.();
 };
+
+export const setOpenRoomId = (id: string | null) => {
+  globalRefs.openRoomId = id;
+};
+export const getOpenRoomId = () => globalRefs.openRoomId;
 
 export const getGlobalSocket = () => globalRefs.socket;
 export const getGlobalUsername = () => globalRefs.username;

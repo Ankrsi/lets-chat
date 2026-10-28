@@ -103,7 +103,7 @@ export default function StaticMap({ lat, lng, width, height, zoom = 16, centerPi
 }
 
 const styles = StyleSheet.create({
-  map: { overflow: "hidden", backgroundColor: "#E8EEF6" },
+  map: { overflow: "hidden", backgroundColor: colors.surfaceAlt },
   accuracy: {
     position: "absolute",
     backgroundColor: "rgba(59,130,246,0.14)",

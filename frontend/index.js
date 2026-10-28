@@ -6,7 +6,6 @@ import 'react-native-get-random-values';
 import inCallManager from 'react-native-incall-manager';
 import CustomNotification from './app/components/customNotification';
 import { handleGroupKeyPacket } from './utils/e2ee';
-import { PLAMAPI } from './utils/api';
 import { handleDropCall, showIncomingCall } from './utils/callkeep';
 import { getGlobalSocket, getGlobalUsername } from './utils/globalRefs';
 import { savePendingNotificationOpen } from './utils/notificationOpen';
@@ -71,24 +70,6 @@ const handleRemoteMessage = async (remoteMessage) => {
       } catch (error) {
         console.error('[FCM] Error showing incoming call in background:', error);
       }
-    } else if (data.type === 'plam_wallet_permission') {
-      try {
-        await notifee.displayNotification({
-          title: `${data?.title}` || 'New Notification',
-          body: data?.content || 'You have a new notification',
-          android: {
-            channelId: 'messages',
-            smallIcon: 'ic_launcher',
-            importance: AndroidImportance.DEFAULT,
-          },
-          ios: {
-            sound: 'default',
-          },
-        });
-        console.log('[FCM] PLAM notification displayed in background');
-      } catch (error) {
-        console.error('[FCM] Error displaying PLAM notification in background:', error);
-      }
     } else if (data.type === 'group_key_chat') {
       try {
         const msg = data;
@@ -147,25 +128,6 @@ const handleNotifeeEvent = async ({ type, detail }) => {
       }
     }
 
-    if (type === EventType.ACTION_PRESS && pressAction?.id === 'plam_pay_accept') {
-      try {
-        await notifee.cancelNotification(notification?.id || '');
-        await PLAMAPI.patch('/plam/register-palm-request', { status: 'ACCEPTED' });
-        console.log('[Notifee] PLAM accept action handled');
-      } catch (error) {
-        console.error('[Notifee] Error handling PLAM accept action:', error);
-      }
-    }
-
-    if (type === EventType.ACTION_PRESS && pressAction?.id === 'plam_pay_reject') {
-      try {
-        await notifee.cancelNotification(notification?.id || '');
-        await PLAMAPI.patch('/plam/register-palm-request', { status: 'REJECTED' });
-        console.log('[Notifee] PLAM reject action handled');
-      } catch (error) {
-        console.error('[Notifee] Error handling PLAM reject action:', error);
-      }
-    }
   } catch (error) {
     console.error('[Notifee] Unexpected error in background event handler:', error);
   }

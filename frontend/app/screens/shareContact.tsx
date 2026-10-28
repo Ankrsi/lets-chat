@@ -1,6 +1,6 @@
 import { getConversationById, updateConversationLastMessage } from "@/db/conversationRepo";
 import { saveMessage } from "@/db/messageRepo";
-import { colors, radius, shadow } from "@/theme";
+import { colors, radius, shadow, statusBarStyle } from "@/theme";
 import { encryptOutgoingMessage } from "@/utils/e2ee";
 import { getGlobalSocket, getGlobalUsername, setGlobalDbTick } from "@/utils/globalRefs";
 import { Ionicons } from "@expo/vector-icons";
@@ -130,7 +130,7 @@ export default function ShareContactScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right", "bottom"]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
       {/* Header */}
       <View style={styles.header}>

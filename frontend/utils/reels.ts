@@ -17,6 +17,9 @@ export interface Reel {
   videoUrl: string;
   caption: string;
   duration: number | null;
+  // Video size as shown (rotation applied), from the uploader; missing on older reels
+  width?: number | null;
+  height?: number | null;
   photos?: string[] | null;
   createdAt: string;
   author: ReelAuthor;
@@ -126,6 +129,7 @@ export async function uploadReel(
   caption: string,
   onProgress: (percent: number) => void,
   duration?: number | null,
+  size?: { width: number; height: number } | null,
 ): Promise<Reel> {
   const fileUrls: string[] = [];
   for (const [i, file] of files.entries()) {
@@ -135,6 +139,7 @@ export async function uploadReel(
     ...(fileUrls.length > 1 ? { fileUrls } : { fileUrl: fileUrls[0] }),
     caption,
     ...(duration ? { duration } : {}),
+    ...(size ? { width: size.width, height: size.height } : {}),
   });
   return res.data.reel;
 }

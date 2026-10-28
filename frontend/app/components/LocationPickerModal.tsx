@@ -1,4 +1,4 @@
-import { colors, radius, shadow } from "@/theme";
+import { colors, radius, shadow, statusBarStyle } from "@/theme";
 import { addressFor, distanceMetres, getCurrentLocation, SharedLocation } from "@/utils/location";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -109,7 +109,7 @@ export default function LocationPickerModal({ visible, onClose, onSend }: Props)
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.root}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   headerBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   headerTitle: { flex: 1, fontSize: 19, fontWeight: "800", color: colors.text, marginLeft: 4 },
 
-  mapPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: "#E8EEF6" },
+  mapPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt },
   mapControls: { position: "absolute", right: 12, bottom: 16, alignItems: "flex-end", gap: 10 },
   zoomBox: { backgroundColor: colors.surface, borderRadius: radius.md, ...shadow(2) },
   zoomBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },

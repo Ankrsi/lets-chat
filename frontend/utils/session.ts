@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { db } from "@/db/sqlite";
 import * as Application from 'expo-application';
 import * as Contacts from 'expo-contacts';
 import { Router } from 'expo-router';
@@ -20,6 +21,8 @@ export interface AuthUser {
   email: string | null;
   profile_image: string | null;
   isRegistered: boolean;
+  twoStepEnabled?: boolean;
+  photoVisibility?: "everyone" | "nobody";
 }
 
 export async function getDeviceId(): Promise<string> {
@@ -30,6 +33,11 @@ export async function getDeviceId(): Promise<string> {
 }
 
 export async function saveUser(user: AuthUser) {
+  // The chats on this phone belong to one number: a different number logging in starts empty
+  const owner = await AsyncStorage.getItem("dbOwner");
+  if (owner && owner !== String(user.phone)) await clearLocalData();
+  await AsyncStorage.setItem("dbOwner", String(user.phone));
+
   await AsyncStorage.multiSet([
     ["username", String(user.phone)],
     ["userHandle", user.username ?? ""],
@@ -38,8 +46,15 @@ export async function saveUser(user: AuthUser) {
     ["about", user.about ?? ""],
     ["email", user.email ?? ""],
     ["profile", user.profile_image ?? ""],
+    ["twoStepEnabled", user.twoStepEnabled ? "1" : "0"],
+    ["photoVisibility", user.photoVisibility ?? "everyone"],
   ]);
   setGlobalUsername(String(user.phone));
+}
+
+async function clearLocalData() {
+  db.execSync("DELETE FROM messages; DELETE FROM message_receipts; DELETE FROM conversations; DELETE FROM calls;");
+  await AsyncStorage.multiRemove(["contactsFriend", "twoStepEnabled", "photoVisibility"]);
 }
 
 export async function syncContacts() {

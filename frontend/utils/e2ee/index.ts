@@ -22,7 +22,7 @@ export { isEnvelope } from 'e2e-crypto';
 
 export const E2EE_ENABLED = true;
 
-const E2E_MESSAGE_TYPES = ['text', 'contact', 'location', 'voice', 'audio', 'image', 'video', 'file'];
+const E2E_MESSAGE_TYPES = ['text', 'contact', 'location', 'voice', 'audio', 'image', 'video', 'file', 'document'];
 
 const WAITING_TEXT = '🔒 Waiting for this message. This may take a while.';
 
@@ -111,6 +111,10 @@ async function encryptorFor(conversationId: string, myId: string): Promise<Encry
   return (plaintext) => e2e.encryptDirect(others[0], plaintext);
 }
 
+// Chats that have been encrypted at least once. They must never quietly fall back to plain
+// text: a server (or attacker) answering "this person has no keys" would then read the message.
+const secureKey = (conversationId: string) => `e2eeSecure:${conversationId}`;
+
 export async function encryptOutgoingMessage(socketData: any): Promise<void> {
   if (!E2EE_ENABLED || !E2E_MESSAGE_TYPES.includes(socketData.messageType)) return;
   if (__DEV__) console.log('[e2ee] encrypting', socketData.messageId, socketData.messageType, 'conv', socketData.conversationId);
@@ -122,9 +126,14 @@ export async function encryptOutgoingMessage(socketData: any): Promise<void> {
 
   const content = await encrypt(JSON.stringify(socketData.content));
   if (!content) {
+    if (await AsyncStorage.getItem(secureKey(socketData.conversationId))) {
+      throw new Error("This chat is end-to-end encrypted, but the message couldn't be encrypted right now. It was not sent. Try again in a moment.");
+    }
+    // Never encrypted (the other person's app has no keys yet): plain text, as before
     console.warn(`[e2ee] ${socketData.conversationId}: a recipient has no E2EE keys, sending unencrypted`);
     return;
   }
+  await AsyncStorage.setItem(secureKey(socketData.conversationId), "1");
   socketData.content = content;
   if (socketData.replyToMessage) {
     socketData.replyToMessage = await encrypt(JSON.stringify(socketData.replyToMessage));

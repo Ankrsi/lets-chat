@@ -1,6 +1,6 @@
 import { statusStyles } from "@/app/styles";
 import { ContactContext } from "@/contexts/FriendContactContext";
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 import { CHATAPI, apiErrorMessage } from "@/utils/api";
 import { getGlobalUsername } from "@/utils/globalRefs";
 import { MAX_UPLOAD_BYTES, MediaItem, mediaFromPickerAsset } from "@/utils/media";
@@ -194,7 +194,7 @@ export default function StatusScreen() {
 
     return (
         <SafeAreaView style={statusStyles.screen} edges={["top", "left", "right"]}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+            <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
             <View style={{ flex: 1 }}>
                 <View style={statusStyles.header}>
                     <Text style={statusStyles.headerTitle}>Status</Text>

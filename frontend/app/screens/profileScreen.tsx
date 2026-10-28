@@ -1,4 +1,5 @@
 import { AuthAPI, apiErrorMessage } from "@/utils/api";
+import { saveTokens } from "@/utils/tokens";
 import { AuthUser, saveUser } from "@/utils/session";
 import { normalizeUsername, usernameStatusText, useUsernameStatus } from "@/utils/username";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,7 +24,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ProfileStyles, SettingsStyle } from "../styles";
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 type EditField = "name" | "about" | "username" | "email";
@@ -111,7 +112,7 @@ export default function ProfileScreen() {
         try {
             if (editing === "username") {
                 const res = await AuthAPI.patch("/profile/username", { username: normalizeUsername(draft.username) });
-                await AsyncStorage.setItem("token", res.data.accessToken); // token carries the username
+                await saveTokens(res.data.accessToken); // token carries the username
                 await applyUser(res.data.user);
             } else {
                 const body =
@@ -185,7 +186,7 @@ export default function ProfileScreen() {
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
             <View style={SettingsStyle.root}>
-                <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+                <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
                 {/* ── Header ── */}
                 <View style={SettingsStyle.header}>

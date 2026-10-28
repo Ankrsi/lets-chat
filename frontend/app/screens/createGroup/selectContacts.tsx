@@ -1,4 +1,4 @@
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 import { encryptOutgoingMessage } from "@/utils/e2ee";
 import { SelectContactsStyles } from "@/app/styles";
 import { saveConversation, updateConversationLastMessage, updateGroupMembers } from "@/db/conversationRepo";
@@ -203,7 +203,7 @@ export default function SelectContacts() {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+            <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
             {/* ── Header ── */}
             <View style={SelectContactsStyles.header}>

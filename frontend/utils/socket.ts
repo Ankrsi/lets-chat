@@ -1,6 +1,9 @@
 import { currentScreen } from "@/app/_layout";
+import { getAccessToken, clearTokens } from "@/utils/tokens";
 import { clearTurnCredentials, refreshTurnCredentials } from "@/utils/turn";
 import { clearVideoCache } from "@/utils/videoCache";
+import { setAppLock } from "@/utils/appLock";
+import { onlineStatusOn, readReceiptsOn } from "@/utils/privacy";
 import { decryptIncomingEdit, decryptIncomingMessage, handleGroupKeyPacket, handleResendRequest, initKey, rotateGroupKey } from "@/utils/e2ee";
 import { registerGroupVideoCallHandlers } from "@/contexts/groupVideoCallService";
 import { registerVideoCallHandlers } from "@/contexts/videoCallController";
@@ -12,12 +15,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from 'expo-router';
 import { io, Socket } from "socket.io-client";
 import { AuthAPI, CHATAPI } from "./api";
-import { setGlobalDbTick, setGlobalIsSocketConnected, setGlobalNewLogin, setGlobalSocket, setGlobalUsername } from "./globalRefs";
+import { getOpenRoomId, setGlobalDbTick, setGlobalIsSocketConnected, setGlobalNewLogin, setGlobalSocket, setGlobalUsername } from "./globalRefs";
 
 let socket: Socket;
 
 const initSocket = async () => {
-  const token = await AsyncStorage.getItem("token");
+  const token = await getAccessToken();
     // socket = io("http://192.168.1.5:4022", {
     socket = io("wss://lets-chat-conversation-socket.up.railway.app", {
     transports: ["websocket"],
@@ -52,9 +55,18 @@ export const logout = async () => {
     // Already ended (e.g. signed out by a login on another device) or offline: still log out locally
     console.info("logout request failed", err);
   }
-  await AsyncStorage.multiRemove(["token", "refreshToken", "userHandle"]);
+  // Close the live connection, or it keeps receiving this account's messages
+  socket?.removeAllListeners();
+  socket?.disconnect();
+  socket = null as any;
+  setGlobalSocket(null);
+  setGlobalIsSocketConnected(false);
+
+  await clearTokens();
+  await AsyncStorage.removeItem("userHandle");
   await clearTurnCredentials();
   await clearVideoCache();
+  setAppLock(false);
   if (router.canDismiss()) router.dismissAll(); // nothing to dismiss when already at the first screen
   router.navigate('/screens/login');
 };
@@ -79,7 +91,10 @@ const offSocketEvent = async (socket: Socket) => {
     "chat:updateNewLogin",
     "chat:group-info-private",
     "chat:updateContactsList",
-    "chat:resend-request"
+    "chat:resend-request",
+    "chat:editMessage",
+    "chat:send-group-key",
+    "chat:requestGroupKey"
   ].forEach((sock) => {
     socket.off(sock);
   })
@@ -109,11 +124,12 @@ const socketEvents = async (socket: Socket) => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
-        if (currentScreen == 'screens/room') {
+        // Only when this message's chat is the one on screen
+        if (currentScreen == 'screens/room' && getOpenRoomId() === String(msg.conversationId)) {
           const unreadData: any = await getUnreadMessageData(msg.conversationId as string) || "[]";
           let unreadMsgTemp: any = JSON.parse(typeof unreadData?.unreadMsg === 'string' ? unreadData.unreadMsg : '[]');
           if (unreadMsgTemp) {
-            socket?.emit("chat:markAsRead", { messageIds: unreadMsgTemp, conversationId: msg.conversationId, username: storedUsername, timestamp: new Date().toISOString() });
+            if (readReceiptsOn()) socket?.emit("chat:markAsRead", { messageIds: unreadMsgTemp, conversationId: msg.conversationId, username: storedUsername, timestamp: new Date().toISOString() });
             await clearUnreadMessages(msg.conversationId as string);
             setGlobalDbTick();
           }
@@ -135,7 +151,7 @@ const socketEvents = async (socket: Socket) => {
     enqueueDbWrite(async () => {
       if (!(await decryptIncomingEdit(data, storedUsername))) return;
 
-      await updateMessageData(data);
+      await updateMessageData(data, String(data.username));
       await updateConversationLastMessageText(data.conversationId, data.newMessage);
       setGlobalDbTick();
     });
@@ -183,8 +199,8 @@ const socketEvents = async (socket: Socket) => {
   });
   socket?.on("chat:deleteMessages", (data: any, ack: Function) => {
     enqueueDbWrite(async () => {
-      const { conversationId, messageIds } = data;
-      await deleteMessageById(conversationId, messageIds);
+      const { conversationId, messageIds, username } = data;
+      await deleteMessageById(conversationId, messageIds, String(username));
       setGlobalDbTick();
     });
     if (ack) ack("received");
@@ -321,6 +337,11 @@ const socketEvents = async (socket: Socket) => {
     const storeContacts = JSON.parse(await AsyncStorage.getItem("contactsFriend") || "[]");
     const data = storeContacts.filter((contat: any) => String(contat.phone) == String(phone));
     let contactData = data[0];
+    // Not in my contacts: nothing to refresh
+    if (!contactData) {
+      if (ack) ack("received");
+      return;
+    }
     const res = await CHATAPI.post("/contacts/my-contacts", {
       phonesWithNames: [{
         "name": contactData.name,
@@ -336,10 +357,11 @@ const socketEvents = async (socket: Socket) => {
     if (ack) ack("received");
   });
   socket?.emit("registerUser", { senderId: storedUsername });
+  socket?.emit("privacy:online", { show: onlineStatusOn() });
 }
 
 export const initializeSocket = async () => {
-  const token = await AsyncStorage.getItem("token");
+  const token = await getAccessToken();
   if (!token) {
     return null;
   }
@@ -404,14 +426,14 @@ export const offlineMsgStoreApi = async (username: string) => {
           setGlobalDbTick();
         }
         if (msg.type == "chatDeleteMessages") {
-          const { conversationId, messageIds } = msg.data;
-          await deleteMessageById(conversationId, messageIds);
+          const { conversationId, messageIds, username } = msg.data;
+          await deleteMessageById(conversationId, messageIds, String(username));
           setGlobalDbTick();
         }
         if (msg.type == "chatEditMessage") {
           if (await decryptIncomingEdit(msg.data, username)) {
-            await updateMessageData(msg.data);
-            await updateConversationLastMessageText(msg.data.conversationId, msg.data.newMessage.msg);
+            await updateMessageData(msg.data, String(msg.data.username));
+            await updateConversationLastMessageText(msg.data.conversationId, msg.data.newMessage);
             setGlobalDbTick();
           }
         }
@@ -524,11 +546,11 @@ export const offlineMsgStoreApi = async (username: string) => {
               createdAt: m.createdAt ?? new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             });
-            if (currentScreen == 'screens/room') {
+            if (currentScreen == 'screens/room' && getOpenRoomId() === String(m.conversationId)) {
               const unreadData: any = await getUnreadMessageData(m.conversationId as string) || "[]";
               let unreadMsgTemp: any = JSON.parse(typeof unreadData?.unreadMsg === 'string' ? unreadData.unreadMsg : '[]');
               if (unreadMsgTemp) {
-                socket?.emit("chat:markAsRead", { messageIds: unreadMsgTemp, conversationId: msg.data.conversationId, username: username, timestamp: new Date().toISOString() });
+                if (readReceiptsOn()) socket?.emit("chat:markAsRead", { messageIds: unreadMsgTemp, conversationId: msg.data.conversationId, username: username, timestamp: new Date().toISOString() });
                 await clearUnreadMessages(msg.data.conversationId as string);
                 setGlobalDbTick();
               }

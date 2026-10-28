@@ -1,5 +1,6 @@
 import BrandMark from "@/app/components/BrandMark";
-import { colors } from "@/theme";
+import { saveTokens } from "@/utils/tokens";
+import { colors, statusBarStyle } from "@/theme";
 import { AuthAPI, apiErrorMessage } from "@/utils/api";
 import { finishLogin, saveUser } from "@/utils/session";
 import { normalizeUsername, usernameStatusText, useUsernameStatus } from "@/utils/username";
@@ -44,7 +45,7 @@ export default function RegisterScreen() {
         last_name: lastName.trim(),
       });
       // The new access token includes the username
-      await AsyncStorage.setItem("token", res.data.accessToken);
+      await saveTokens(res.data.accessToken);
       await saveUser(res.data.user);
       await finishLogin(router);
     } catch (err: any) {
@@ -60,7 +61,7 @@ export default function RegisterScreen() {
       // Android runs edge-to-edge, so adjustResize no longer shrinks the window: shrink it here
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
       <ScrollView
         ref={scrollRef}
         style={{ backgroundColor: colors.surface }}

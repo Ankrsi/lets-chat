@@ -1,4 +1,4 @@
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 import { saveConversation } from "@/db/conversationRepo";
 import { CHATAPI } from "@/utils/api";
 import { Ionicons } from "@expo/vector-icons";
@@ -108,7 +108,7 @@ export default function Contacts() {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+            <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
             {/* Header */}
             <View style={ContactsStyles.header}>

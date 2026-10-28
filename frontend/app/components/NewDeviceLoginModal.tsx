@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { colors } from "@/theme";
 import {
     Modal,
     View,
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
     },
     card: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderRadius: 24,
         padding: 28,
         width: '100%',
@@ -145,7 +146,7 @@ const styles = StyleSheet.create({
         width: 72,
         height: 72,
         borderRadius: 36,
-        backgroundColor: '#FFF3E0',
+        backgroundColor: colors.warningSoft,
         borderWidth: 2,
         borderColor: '#FFB74D',
         justifyContent: 'center',
@@ -159,7 +160,7 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 20,
         fontWeight: '700',
-        color: '#1A1A2E',
+        color: colors.text,
         marginBottom: 8,
         textAlign: 'center',
         letterSpacing: -0.3,
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
     // Warning box
     warningBox: {
         flexDirection: 'row',
-        backgroundColor: '#FFF8E1',
+        backgroundColor: colors.warningSoft,
         borderRadius: 12,
         padding: 14,
         marginBottom: 24,
@@ -212,12 +213,12 @@ const styles = StyleSheet.create({
         borderWidth: 1.5,
         borderColor: '#E5E7EB',
         alignItems: 'center',
-        backgroundColor: '#F9FAFB',
+        backgroundColor: colors.surfaceAlt,
     },
     cancelText: {
         fontSize: 15,
         fontWeight: '600',
-        color: '#374151',
+        color: colors.text,
     },
     anywayBtn: {
         flex: 1,

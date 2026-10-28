@@ -75,7 +75,9 @@ export const saveMessage = async (msg: any) => {
             hiddenFor = excluded.hiddenFor,
             timestamp = excluded.timestamp,
             createdAt = excluded.createdAt,
-            updatedAt = excluded.updatedAt`,
+            updatedAt = excluded.updatedAt
+        -- Only the same message again (same sender, same chat): a reused ID can't overwrite someone else's
+        WHERE messages.senderId = excluded.senderId AND messages.conversationId = excluded.conversationId`,
             [
                 msg.messageId,
                 msg.conversationId,
@@ -205,13 +207,15 @@ export const updateMessageStatus = async (conversationId: string, messageId: str
     }
 };
 
-export const updateMessageData = async (data: any) => {
+// fromSender: for edits from other people, only their own message is changed
+export const updateMessageData = async (data: any, fromSender?: string) => {
     try {
         await db.runAsync(
             `
-            UPDATE messages SET content = ?, edited = 1 WHERE messageId = ? AND conversationId = ?
+            UPDATE messages SET content = ?, edited = 1
+            WHERE messageId = ? AND conversationId = ? AND (? IS NULL OR senderId = ?)
             `,
-            [JSON.stringify({ msg: data.newMessage }), data.messageId, data.conversationId]
+            [JSON.stringify({ msg: data.newMessage }), data.messageId, data.conversationId, fromSender ?? null, fromSender ?? null]
         )
     } catch (error) {
         console.info("Error updating message text:", error);
@@ -243,12 +247,14 @@ export const updateMessageContent = async (conversationId: string, messageId: st
     }
 };
 
-export const deleteMessageById = async (id: string, messageIds: string[]) => {
+// fromSender: for "delete for everyone" from other people, only their own messages go
+export const deleteMessageById = async (id: string, messageIds: string[], fromSender?: string) => {
     try {
         const placeholders = messageIds.map(() => '?').join(',');
         await db.runAsync(
-            `UPDATE messages SET active = 0 WHERE conversationId = ? AND messageId IN (${placeholders})`,
-            [id, ...messageIds]
+            `UPDATE messages SET active = 0
+             WHERE conversationId = ? AND messageId IN (${placeholders}) AND (? IS NULL OR senderId = ?)`,
+            [id, ...messageIds, fromSender ?? null, fromSender ?? null]
         );
         await refreshConversationLastMessage(id);
     } catch (error) {

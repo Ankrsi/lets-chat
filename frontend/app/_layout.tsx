@@ -1,4 +1,8 @@
 import 'react-native-get-random-values';
+import { getAccessToken } from "@/utils/tokens";
+// First: reads the appearance settings before any styles are built
+import '@/theme';
+import AppLock from "@/app/components/AppLock";
 import { DbUpdateProvider } from "@/contexts/DbUpdateContext";
 import { FriendContactProvider } from "@/contexts/FriendContactContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
@@ -12,6 +16,7 @@ import notifee from '@notifee/react-native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getMessaging, getToken } from '@react-native-firebase/messaging';
 import { Image } from 'expo-image';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, useNavigationContainerRef } from "expo-router";
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from "react";
@@ -98,10 +103,7 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
       <Animated.View style={[styles.logoCard, logoStyle]}>
         {/* Shimmer overlay */}
         <Animated.View style={[styles.shimmer, shimmerStyle]} />
-        <Image
-          source={require('../assets/images/splash-icon.png')}
-          style={styles.logo}
-        />
+        <Image source={require('../assets/images/brand-mark.png')} style={{ width: 70, height: 70 }} />
       </Animated.View>
 
       {/* App name */}
@@ -126,7 +128,7 @@ async function registerForPushNotificationsAsync() {
     await AsyncStorage.setItem('fcmToken', token);
     console.log('[FCM] FCM token obtained and stored');
     // Logged in and the token changed since login: tell the server where to push
-    if (token !== previous && await AsyncStorage.getItem('token')) {
+    if (token !== previous && await getAccessToken()) {
       AuthAPI.patch('/profile/device-tokens', { fcm_token: token })
         .catch((err) => console.info('[FCM] token sync failed', err));
     }
@@ -195,9 +197,12 @@ function RootLayoutContent() {
               <Stack.Screen name="screens/reels/uploadReel" options={{ title: "New Reel", headerShown: false, animation: "slide_from_bottom" }} />
               <Stack.Screen name="screens/reels/userProfile" options={{ title: "Profile", headerShown: false }} />
               <Stack.Screen name="screens/reels/findPeople" options={{ title: "Find People", headerShown: false }} />
+              <Stack.Screen name="screens/blockedContacts" options={{ title: "Blocked Contacts", headerShown: false }} />
+              <Stack.Screen name="screens/twoStep" options={{ title: "Two-Step Verification", headerShown: false }} />
               <Stack.Screen name="screens/reels/followList" options={{ title: "Followers", headerShown: false }} />
             </Stack>
           </FriendContactProvider>
+          <AppLock />
         </SocketProvider>
       </DbUpdateProvider>
     </>
@@ -206,9 +211,11 @@ function RootLayoutContent() {
 
 export default function RootLayout() {
   return (
-    <NotificationProvider>
-      <RootLayoutContent />
-    </NotificationProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NotificationProvider>
+        <RootLayoutContent />
+      </NotificationProvider>
+    </GestureHandlerRootView>
   )
 }
 
@@ -267,12 +274,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
     transform: [{ rotate: '25deg' }],
     zIndex: 1,
-  },
-
-  logo: {
-    width: 72,
-    height: 72,
-    resizeMode: 'contain',
   },
 
   appName: {

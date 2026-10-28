@@ -1,4 +1,4 @@
-import { colors, font, radius, shadow } from "@/theme";
+import { colors, font, radius, shadow, statusBarStyle } from "@/theme";
 import { CHATAPI, apiErrorMessage } from "@/utils/api";
 import { setGlobalDbTick } from "@/utils/globalRefs";
 import { useDbUpdate } from "@/contexts/DbUpdateContext";
@@ -67,7 +67,7 @@ export default function MessageTimerScreen({ title, icon, heading, description, 
 
     return (
         <SafeAreaView style={s.container} edges={["top", "left", "right"]}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+            <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
             <View style={s.header}>
                 <TouchableOpacity onPress={() => router.back()} hitSlop={10} style={s.headerBtn} accessibilityLabel="Back">

@@ -1,4 +1,6 @@
 import { ContactContext } from "@/contexts/FriendContactContext";
+import { getOpenRoomId, setOpenRoomId } from "@/utils/globalRefs";
+import { readReceiptsOn } from "@/utils/privacy";
 import { startGroupVideoCall } from "@/contexts/groupVideoCallService";
 import { startVideoCall } from "@/contexts/videoCallController";
 import { clearUnreadMessages, getConversationById, getUnreadMessageData, updateConversationLastMessage, updateConversationLastMessageText } from "@/db/conversationRepo";
@@ -393,6 +395,13 @@ export default function ChatScreen() {
   const { dbTick } = useDbUpdate();
   const socket = getGlobalSocket();
   const { id } = useLocalSearchParams();
+  // Tells incoming-message handling which chat is open (for read receipts)
+  useEffect(() => {
+    setOpenRoomId(String(id));
+    return () => {
+      if (getOpenRoomId() === String(id)) setOpenRoomId(null);
+    };
+  }, [id]);
   // Data read just before navigating here (chat list); null when opened another way
   const [prefetched] = useState(() => takePrefetchedRoom(String(id)));
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -503,7 +512,7 @@ export default function ChatScreen() {
           setUnreadIds(unreadList);
         }
         if (unreadList.length) {
-          socket?.emit("chat:markAsRead", { messageIds: unreadMsgTemp, conversationId: id, username, timestamp: new Date().toISOString() });
+          if (readReceiptsOn()) socket?.emit("chat:markAsRead", { messageIds: unreadMsgTemp, conversationId: id, username, timestamp: new Date().toISOString() });
           await clearUnreadMessages(id as string);
           setGlobalDbTick();
         }
@@ -617,7 +626,12 @@ export default function ChatScreen() {
       lastMessageDate: new Date().toISOString(),
     }, username!);
     setGlobalDbTick();
-    await encryptOutgoingMessage(socketData);
+    try {
+      await encryptOutgoingMessage(socketData);
+    } catch (err: any) {
+      Alert.alert("Message not sent", err?.message ?? "It couldn't be encrypted. Try again.");
+      return null;
+    }
     socket?.emit("chat:send-message", socketData);
     return null;
   };

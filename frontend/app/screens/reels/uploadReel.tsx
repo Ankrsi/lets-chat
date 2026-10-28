@@ -23,7 +23,15 @@ const MAX_PHOTOS = 10;
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm", "video/3gpp"];
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
 
-type PickedMedia = { kind: "video" | "image"; uri: string; mimeType: string; duration: number | null; size: number | null };
+type PickedMedia = {
+  kind: "video" | "image";
+  uri: string;
+  mimeType: string;
+  duration: number | null;
+  size: number | null;
+  width: number | null;
+  height: number | null;
+};
 
 type Notice = {
   icon: React.ComponentProps<typeof Ionicons>["name"];
@@ -233,7 +241,7 @@ export default function UploadReelScreen() {
       });
       return null;
     }
-    return { kind, uri: asset.uri, mimeType, duration: seconds, size };
+    return { kind, uri: asset.uri, mimeType, duration: seconds, size, width: asset.width || null, height: asset.height || null };
   };
 
   const share = async () => {
@@ -268,7 +276,13 @@ export default function UploadReelScreen() {
       }
       setPhase("uploading");
       setProgress(0);
-      await uploadReel(isVideo ? [upload] : media, caption.trim(), setProgress, isVideo ? upload.duration : null);
+      await uploadReel(
+        isVideo ? [upload] : media,
+        caption.trim(),
+        setProgress,
+        isVideo ? upload.duration : null,
+        isVideo && first.width && first.height ? { width: first.width, height: first.height } : null,
+      );
       markFeedStale();
       router.back();
     } catch (err) {

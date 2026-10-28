@@ -1,7 +1,7 @@
 import { ContactContext } from "@/contexts/FriendContactContext";
 import { useDbUpdate } from "@/contexts/DbUpdateContext";
 import { getMessageById, getMessageReceiptsById } from "@/db/messageRepo";
-import { colors, font, radius, shadow } from "@/theme";
+import { colors, font, radius, shadow, statusBarStyle } from "@/theme";
 import { getGlobalUsername } from "@/utils/globalRefs";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -106,7 +106,7 @@ export default function MessageInfoScreen() {
 
     return (
         <SafeAreaView style={s.container} edges={["top", "left", "right"]}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+            <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
             <View style={s.header}>
                 <TouchableOpacity onPress={() => router.back()} hitSlop={10} style={s.headerBtn} accessibilityLabel="Back">
                     <Ionicons name="chevron-back" size={24} color={colors.text} />

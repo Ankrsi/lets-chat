@@ -1,9 +1,9 @@
 import CustomNotification from '@/app/components/customNotification';
+import { getAccessToken } from "@/utils/tokens";
 import { handleGroupKeyPacket } from '@/utils/e2ee';
-import { PLAMAPI } from '@/utils/api';
 import { handleDropCall, handlePickCall, showIncomingCall } from '@/utils/callkeep';
 import { getGlobalIsSocketConnected, getGlobalSocket, getGlobalUsername, setGlobalIsSocketConnected, setGlobalUsername } from '@/utils/globalRefs';
-import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
+import notifee, { EventType } from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMessaging, onMessage } from '@react-native-firebase/messaging';
 import React, { createContext, useEffect, useRef } from 'react';
@@ -39,7 +39,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.info("AppState changed to", nextState);
         if (nextState === "active") {
           // Resumed from background by a notification tap / Answer action.
-          if (await AsyncStorage.getItem("token")) {
+          if (await getAccessToken()) {
             await consumePendingNotificationOpen();
           }
           // initializeSocket();
@@ -74,31 +74,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         //   pathname: '/screens/callScreens/incomingCall',
         //   params: { data: JSON.stringify(remoteMessage.data) },
         // });
-      }
-      else if (remoteMessage.data?.type == "plam_wallet_permission") {
-        notifee.displayNotification({
-          title: `${remoteMessage.data?.title}` || "New Notification",
-          body: remoteMessage.data?.content,
-          android: {
-            channelId: 'messages',
-            smallIcon: 'ic_launcher',
-            importance: AndroidImportance.DEFAULT,
-            actions: [
-              {
-                title: 'Accept',
-                pressAction: { id: 'plam_pay_accept' },
-              },
-              {
-                title: 'Reject',
-                pressAction: { id: 'plam_pay_reject' },
-              },
-            ]
-          },
-          ios: {
-            sound: 'default',
-            categoryId: 'auth_request'
-          },
-        });
       }
       else if (remoteMessage.data?.type === 'group_key_chat') {
         try {
@@ -139,17 +114,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         handleDropCall(data, socket);
       }
 
-      if (type === EventType.ACTION_PRESS && pressAction?.id === 'plam_pay_accept') {
-        // socketRef.current?.emit('call:reject', data);
-        await notifee.cancelNotification(notification?.id || "");
-        await PLAMAPI.patch("/palm/register-palm-request", { "status": "ACCEPTED" });
-      }
-
-      if (type === EventType.ACTION_PRESS && pressAction?.id === 'plam_pay_reject') {
-        // socketRef.current?.emit('call:reject', data);
-        await notifee.cancelNotification(notification?.id || "");
-        await PLAMAPI.patch("/palm/register-palm-request", { "status": " REJECTED" });
-      }
     });
 
     return () => {

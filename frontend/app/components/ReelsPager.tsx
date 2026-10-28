@@ -5,11 +5,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, FlatList, Pressable, RefreshControl, Share, StyleSheet, Text, TouchableOpacity, View, ViewToken } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, FlatList, Pressable, RefreshControl, Share, StyleSheet, Text, TouchableOpacity, View, ViewToken } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { ReelStyles } from "../styles";
 import ReelCommentsSheet from "./ReelCommentsSheet";
 
 const DOUBLE_TAP_MS = 260;
+const MAX_ZOOM = 4;
 
 const timeAgo = (iso: string) => {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -45,16 +48,68 @@ function PhotoReel({ uri, height }: { uri: string; height: number }) {
   );
 }
 
-function PhotoCarousel({ uris, height, onTap }: { uris: string[]; height: number; onTap: () => void }) {
+function Zoomable({ children, onZoomChange }: { children: React.ReactNode; onZoomChange: (zooming: boolean) => void }) {
+  const size = useSharedValue({ width: 0, height: 0 });
+  const start = useSharedValue({ x: 0, y: 0 });
+  const scale = useSharedValue(1);
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+
+  const pinch = Gesture.Pinch()
+    .onStart((e) => {
+      start.value = { x: e.focalX, y: e.focalY };
+      runOnJS(onZoomChange)(true);
+    })
+    .onUpdate((e) => {
+      const z = Math.min(Math.max(e.scale, 1), MAX_ZOOM);
+      // Keep the point first pinched under the fingers, and move with them
+      scale.value = z;
+      tx.value = (start.value.x - size.value.width / 2) * (1 - z) + (e.focalX - start.value.x);
+      ty.value = (start.value.y - size.value.height / 2) * (1 - z) + (e.focalY - start.value.y);
+    })
+    .onFinalize(() => {
+      scale.value = withTiming(1);
+      tx.value = withTiming(0);
+      ty.value = withTiming(0);
+      runOnJS(onZoomChange)(false);
+    });
+
+  const zoomStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={pinch}>
+      <View style={StyleSheet.absoluteFill} onLayout={(e) => { size.value = e.nativeEvent.layout; }}>
+        <Reanimated.View style={[StyleSheet.absoluteFill, zoomStyle]}>{children}</Reanimated.View>
+      </View>
+    </GestureDetector>
+  );
+}
+
+function PhotoCarousel({ uris, height, onTap, onZoomChange }: {
+  uris: string[];
+  height: number;
+  onTap: () => void;
+  onZoomChange: (zooming: boolean) => void;
+}) {
   const [width, setWidth] = useState(0);
   const [index, setIndex] = useState(0);
-  if (uris.length === 1) {
-    return (
-      <Pressable style={ReelStyles.video} onPress={onTap}>
-        <PhotoReel uri={uris[0]} height={height} />
+  const [zooming, setZooming] = useState(false);
+  const onZoom = useCallback((z: boolean) => {
+    setZooming(z);
+    onZoomChange(z);
+  }, [onZoomChange]);
+
+  const page = (uri: string) => (
+    <Zoomable onZoomChange={onZoom}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onTap}>
+        <PhotoReel uri={uri} height={height} />
       </Pressable>
-    );
-  }
+    </Zoomable>
+  );
+
+  if (uris.length === 1) return <View style={ReelStyles.video}>{page(uris[0])}</View>;
   return (
     <View style={ReelStyles.video} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {width > 0 && (
@@ -63,22 +118,19 @@ function PhotoCarousel({ uris, height, onTap }: { uris: string[]; height: number
           keyExtractor={(uri, i) => `${i}-${uri}`}
           horizontal
           pagingEnabled
+          scrollEnabled={!zooming}
           showsHorizontalScrollIndicator={false}
           getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
           onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
           initialNumToRender={2}
           windowSize={3}
-          renderItem={({ item }) => (
-            <Pressable style={{ width, height }} onPress={onTap}>
-              <PhotoReel uri={item} height={height} />
-            </Pressable>
-          )}
+          renderItem={({ item }) => <View style={{ width, height }}>{page(item)}</View>}
         />
       )}
-      <View style={ReelStyles.photoCounter} pointerEvents="none">
+      <View style={[ReelStyles.photoCounter, zooming && { opacity: 0 }]} pointerEvents="none">
         <Text style={ReelStyles.photoCounterText}>{index + 1}/{uris.length}</Text>
       </View>
-      <View style={ReelStyles.photoDots} pointerEvents="none">
+      <View style={[ReelStyles.photoDots, zooming && { opacity: 0 }]} pointerEvents="none">
         {uris.map((uri, i) => (
           <View key={`${i}-${uri}`} style={[ReelStyles.photoDot, i === index && ReelStyles.photoDotActive]} />
         ))}
@@ -87,8 +139,9 @@ function PhotoCarousel({ uris, height, onTap }: { uris: string[]; height: number
   );
 }
 
-const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, muted, commentCount, onToggleMute, onAuthorPress, onDelete, onOpenComments }: {
+const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, muted, commentCount, onToggleMute, onZoomChange, onAuthorPress, onDelete, onOpenComments }: {
   reel: Reel;
+  onZoomChange: (zooming: boolean) => void;
   muted: boolean;
   onToggleMute: () => void;
   height: number;
@@ -108,6 +161,27 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, m
   const [pausedByUser, setPausedByUser] = useState(false);
   const [loading, setLoading] = useState(true);
   const [captionOpen, setCaptionOpen] = useState(false);
+  const [zooming, setZooming] = useState(false);
+  const onZoom = useCallback((z: boolean) => {
+    setZooming(z);
+    onZoomChange(z);
+  }, [onZoomChange]);
+  const hidden = zooming && { opacity: 0 };
+
+  // Fill the screen when the video's shape is close to it, otherwise show it whole.
+  // The shape comes from the uploader (it accounts for rotation); older reels fall back on the
+  // player's track size, trusted only when it's portrait (phone videos report landscape + rotation).
+  const [trackRatio, setTrackRatio] = useState<number | null>(null);
+  useEffect(() => {
+    const sub = player.addListener("videoTrackChange", ({ videoTrack }) => {
+      const size = videoTrack?.size;
+      if (size?.width && size?.height) setTrackRatio(size.width / size.height);
+    });
+    return () => sub.remove();
+  }, [player]);
+  const videoRatio = reel.width && reel.height ? reel.width / reel.height : trackRatio !== null && trackRatio < 1 ? trackRatio : null;
+  const screenRatio = Dimensions.get("window").width / (height || 1);
+  const fillsScreen = videoRatio !== null && Math.abs(videoRatio - screenRatio) / screenRatio < 0.25;
   // Suggested reels (from people I don't follow) get a Follow button
   const [followed, setFollowed] = useState(false);
   const follow = async () => {
@@ -214,13 +288,12 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, m
   return (
     <View style={[ReelStyles.item, { height }]}>
       {photo ? (
-        <PhotoCarousel uris={reelPhotos(reel)} height={height} onTap={onTap} />
+        <PhotoCarousel uris={reelPhotos(reel)} height={height} onTap={onTap} onZoomChange={onZoom} />
       ) : (
         <VideoView
           player={player}
           style={ReelStyles.video}
-          // contain: the whole frame stays on screen (cover cropped the sides on tall phones)
-          contentFit="contain"
+          contentFit={fillsScreen ? "cover" : "contain"}
           nativeControls={false}
         />
       )}
@@ -249,7 +322,7 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, m
       )}
 
       {/* Author + caption */}
-      <View style={ReelStyles.bottomInfo}>
+      <View style={[ReelStyles.bottomInfo, hidden]} pointerEvents={zooming ? "none" : "auto"}>
         {reel.suggested && <Text style={[ReelStyles.suggestedLabel, ReelStyles.shadow]}>Suggested for you</Text>}
         <View style={ReelStyles.authorLine}>
           <TouchableOpacity style={ReelStyles.authorRow} onPress={() => onAuthorPress?.(reel)} disabled={!onAuthorPress} activeOpacity={0.7}>
@@ -278,7 +351,7 @@ const ReelItem = React.memo(function ReelItem({ reel, height, playing, loaded, m
       </View>
 
       {/* Actions */}
-      <View style={ReelStyles.sideActions}>
+      <View style={[ReelStyles.sideActions, hidden]} pointerEvents={zooming ? "none" : "auto"}>
         <TouchableOpacity style={ReelStyles.sideBtn} onPress={() => setLike(!liked)} hitSlop={10} accessibilityLabel={liked ? "Unlike" : "Like"}>
           <Ionicons name={liked ? "heart" : "heart-outline"} size={32} color={liked ? "#FF3B5C" : "#FFFFFF"} style={ReelStyles.shadow} />
           <Text style={[ReelStyles.sideText, ReelStyles.shadow]}>{compactCount(likeCount)}</Text>
@@ -321,6 +394,7 @@ export default function ReelsPager({
   const [commentsFor, setCommentsFor] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [muted, setMuted] = useState(false);
+  const [zooming, setZooming] = useState(false);
   const toggleMute = useCallback(() => setMuted((m) => !m), []);
   const openComments = useCallback((reel: Reel) => setCommentsFor(reel._id), []);
   const onCommentCount = useCallback((id: string, n: number) => setCommentCounts((prev) => (prev[id] === n ? prev : { ...prev, [id]: n })), []);
@@ -339,6 +413,7 @@ export default function ReelsPager({
       loaded={focused && index >= activeIndex && index <= activeIndex + 2}
       muted={muted}
       onToggleMute={toggleMute}
+      onZoomChange={setZooming}
       commentCount={commentCounts[item._id] ?? item.commentCount ?? 0}
       onAuthorPress={onAuthorPress}
       onDelete={onDelete}
@@ -354,6 +429,7 @@ export default function ReelsPager({
           keyExtractor={(r) => r._id}
           renderItem={renderItem}
           pagingEnabled
+          scrollEnabled={!zooming}
           snapToInterval={height}
           snapToAlignment="start"
           decelerationRate="fast"

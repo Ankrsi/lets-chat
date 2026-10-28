@@ -1,7 +1,8 @@
 import { ContactContext } from "@/contexts/FriendContactContext";
+import { getAccessToken } from "@/utils/tokens";
 import { convBlockMember, convUnblockMember, getConversationInfoId, leaveGroupByID, removeGroupMembers, updateGroupAdmin, updateGroupProfileName } from "@/db/conversationRepo";
 import { clearMessageById } from "@/db/messageRepo";
-import { colors, font, radius, shadow } from "@/theme";
+import { colors, font, radius, shadow, statusBarStyle } from "@/theme";
 import { CHATAPI } from "@/utils/api";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -37,7 +38,7 @@ export default function RoomDetailsScreen() {
         useCallback(() => {
             setReload(false);
             (async () => {
-                const token = await AsyncStorage.getItem("token");
+                const token = await getAccessToken();
                 if (!token) return router.replace("/");
 
                 let res: any = await getConversationInfoId(id as string);
@@ -302,7 +303,7 @@ export default function RoomDetailsScreen() {
 
     return (
         <SafeAreaView style={s.container} edges={["top", "left", "right"]}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+            <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
             <View style={s.header}>
                 <TouchableOpacity onPress={() => router.back()} hitSlop={10} style={s.headerBtn} accessibilityLabel="Back">

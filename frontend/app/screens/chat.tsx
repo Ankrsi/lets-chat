@@ -27,7 +27,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import BottomTabBar from "../components/BottomTabBar";
 import CallLogList from "../components/CallLogList";
 import { ConvStyle, SectionTabStyles } from "../styles";
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 
 interface Chat {
   _id: string;
@@ -87,9 +87,6 @@ const AnimatedHeader = React.memo(({
       >
         <Text style={ConvStyle.headerTitle}>ChatApp</Text>
         <View style={ConvStyle.headerActions}>
-          <TouchableOpacity style={ConvStyle.headerIconBtn}>
-            <Ionicons name="notifications-outline" size={21} color={colors.text} />
-          </TouchableOpacity>
           <TouchableOpacity style={ConvStyle.headerIconBtn} onPress={onSettings}>
             <Ionicons name="settings-outline" size={21} color={colors.text} />
           </TouchableOpacity>
@@ -384,7 +381,7 @@ export default function Chat() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
 
       <AnimatedHeader
         selectionMode={selectionMode}

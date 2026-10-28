@@ -1,512 +1,345 @@
+import { SettingsStyle } from "@/app/styles";
+import { db } from "@/db/sqlite";
+import { colors, radius, statusBarStyle } from "@/theme";
+import { Ionicons } from "@expo/vector-icons";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { reloadAppAsync } from "expo";
+import { File } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { GoogleAuthProvider, getAuth, signInWithCredential } from '@react-native-firebase/auth';
+import { decryptBackup, encryptBackup, saveBackupPassword, savedBackupPassword } from "@/utils/backupCrypto";
+import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from "react-native";
+import { ActivityIndicator, Alert, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { styles } from "../styles";
 
-const DB_NAME = "chat.db";
-const DB_PATH = FileSystem.documentDirectory + `SQLite/${DB_NAME}`;
-const BACKUP_FILE_NAME = "chat_backup.db";
+// The chat database, and the backup kept in the app's private Google Drive folder
+const DB_DIR = `${FileSystem.documentDirectory}SQLite/`;
+const DB_PATH = `${DB_DIR}chat.db`;
+const DOWNLOAD_PATH = `${FileSystem.cacheDirectory}restore.enc`;
+const UPLOAD_PATH = `${FileSystem.cacheDirectory}backup.enc`;
+const DRIVE = "https://www.googleapis.com/drive/v3/files";
 
 GoogleSignin.configure({
-    webClientId: '994506985190-sfpc5s8m8rdk1j8cgkrd5smif11hfp3a.apps.googleusercontent.com',
-    scopes: ['https://www.googleapis.com/auth/drive.appdata']
+  webClientId: "994506985190-sfpc5s8m8rdk1j8cgkrd5smif11hfp3a.apps.googleusercontent.com",
+  scopes: ["https://www.googleapis.com/auth/drive.appdata"],
 });
 
-type Status = "idle" | "loading" | "success" | "error";
-type ActionType = "backup" | "restore" | null;
+type Backup = { id: string; modifiedTime: string; size: string };
 
-interface BackupInfo {
-    id: string;
-    name: string;
-    modifiedTime: string;
-    size: string;
-}
+// One backup per phone number, so a Google account shared by two numbers never mixes chats
+const backupName = async () => `chat_backup_${await AsyncStorage.getItem("username")}.enc`;
 
-const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString("en-IN", {
-        day: "2-digit", month: "short", year: "numeric",
-        hour: "2-digit", minute: "2-digit",
+// A fresh Google access token (it expires after about an hour)
+const getToken = async () => (await GoogleSignin.getTokens()).accessToken;
+
+const findBackup = async (token: string): Promise<Backup | null> => {
+  const q = encodeURIComponent(`name='${await backupName()}'`);
+  const res = await fetch(`${DRIVE}?q=${q}&spaces=appDataFolder&fields=files(id,modifiedTime,size)`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Couldn't reach Google Drive. Try again.");
+  return (await res.json()).files?.[0] ?? null;
+};
+
+const backUp = async (token: string, password: string) => {
+  // New messages wait in a side file (WAL); merge them into chat.db first so the backup has everything
+  db.execSync("PRAGMA wal_checkpoint(TRUNCATE);");
+  const encrypted = await encryptBackup(await new File(DB_PATH).bytes(), password);
+  new File(UPLOAD_PATH).write(encrypted);
+
+  try {
+    const old = await findBackup(token);
+    const auth = { Authorization: `Bearer ${token}` };
+
+    // 1. Create the file in the app's private Drive folder, 2. upload the encrypted bytes into it
+    const created = await fetch(DRIVE, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: await backupName(), parents: ["appDataFolder"] }),
     });
-};
+    if (!created.ok) throw new Error("Upload failed. Your previous backup is kept.");
+    const { id } = await created.json();
 
-const formatBytes = (bytes: string) => {
-    const b = parseInt(bytes);
-    if (!b) return "Unknown size";
-    if (b < 1024) return `${b} B`;
-    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-    return `${(b / (1024 * 1024)).toFixed(2)} MB`;
-};
-
-// DRIVE API
-const findBackupOnDrive = async (accessToken: string): Promise<BackupInfo | null> => {
-    const res = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='${BACKUP_FILE_NAME}'&spaces=appDataFolder&fields=files(id,name,modifiedTime,size)`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    const data = await res.json();
-    return data.files?.[0] ?? null;
-};
-
-const uploadToDrive = async (accessToken: string, dbBase64: string): Promise<boolean> => {
-    const metadata = { name: BACKUP_FILE_NAME, mimeType: "application/octet-stream", parents: ['appDataFolder'] };
-    const boundary = "backup_boundary_xyz";
-    const body =
-        `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-        `--${boundary}\r\nContent-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n${dbBase64}\r\n` +
-        `--${boundary}--`;
-
-    const res = await fetch(
-        `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`,
-        {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": `multipart/related; boundary=${boundary}`,
-            },
-            body,
-        }
-    );
-    return res.ok;
-};
-
-const deleteFromDrive = async (accessToken: string, fileId: string) => {
-    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${accessToken}` },
+    const upload = await FileSystem.uploadAsync(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, UPLOAD_PATH, {
+      httpMethod: "PATCH",
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: { ...auth, "Content-Type": "application/octet-stream" },
     });
-};
-
-// BACKUP
-const backupToGoogleDrive = async (
-    accessToken: string,
-    onProgress: (msg: string) => void
-): Promise<void> => {
-    onProgress("Reading local database...");
-    const dbBase64 = await FileSystem.readAsStringAsync(DB_PATH, {
-        encoding: FileSystem.EncodingType.Base64,
-    });
-
-    onProgress("Checking existing backup...");
-    const existing = await findBackupOnDrive(accessToken);
-
-    onProgress("Uploading new backup...");
-    const uploaded = await uploadToDrive(accessToken, dbBase64);
-    if (!uploaded) throw new Error("Upload failed — previous backup kept.");
-
-    if (existing?.id) {
-        onProgress("Deleting old backup...");
-        await deleteFromDrive(accessToken, existing.id);
+    if (upload.status < 200 || upload.status >= 300) {
+      await fetch(`${DRIVE}/${id}`, { method: "DELETE", headers: auth });
+      throw new Error("Upload failed. Your previous backup is kept.");
     }
 
-    onProgress("Backup complete!");
+    // Only after the new one is safely uploaded
+    if (old) await fetch(`${DRIVE}/${old.id}`, { method: "DELETE", headers: auth });
+  } finally {
+    await FileSystem.deleteAsync(UPLOAD_PATH, { idempotent: true });
+  }
 };
 
-// RESTORE
-const restoreFromGoogleDrive = async (
-    accessToken: string,
-    onProgress: (msg: string) => void
-): Promise<void> => {
-    onProgress("Locating backup on Drive...");
-    const existing = await findBackupOnDrive(accessToken);
-    if (!existing) throw new Error("No backup found on Google Drive.");
+const restore = async (token: string, backup: Backup, password: string) => {
+  // Download and decrypt first, so a failed download or wrong password never touches your chats
+  const res = await FileSystem.downloadAsync(`${DRIVE}/${backup.id}?alt=media`, DOWNLOAD_PATH, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status !== 200) throw new Error("Download failed. Your chats were not changed.");
+  let chats: Uint8Array;
+  try {
+    chats = await decryptBackup(await new File(DOWNLOAD_PATH).bytes(), password);
+  } finally {
+    await FileSystem.deleteAsync(DOWNLOAD_PATH, { idempotent: true });
+  }
+  await saveBackupPassword(password);
 
-    onProgress("Downloading backup...");
-
-    const res = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!res.ok) throw new Error("Download failed.");
-
-    const blob = await res.blob();
-    const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = reader.result as string;
-            resolve(result.split(',')[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-
-    onProgress("Restoring database...");
-    await FileSystem.makeDirectoryAsync(
-        FileSystem.documentDirectory + 'SQLite',
-        { intermediates: true }
-    );
-
-    await FileSystem.writeAsStringAsync(DB_PATH, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-    });
-
-    onProgress("Restored! Please restart the app.");
+  // Swap the database while it's closed, drop the old side files, then restart
+  db.closeSync();
+  try {
+    await FileSystem.deleteAsync(`${DB_PATH}-wal`, { idempotent: true });
+    await FileSystem.deleteAsync(`${DB_PATH}-shm`, { idempotent: true });
+    new File(DB_PATH).write(chats);
+  } finally {
+    // Restart either way: the database is closed, and the restart opens it again
+    await reloadAppAsync("Backup restored");
+  }
 };
 
-const BackupScreen: React.FC = () => {
-    const [accessToken, setAccessToken] = useState<string | null>(null);
-    const [userEmail, setUserEmail] = useState<string | null>(null);
-    const [backupInfo, setBackupInfo] = useState<BackupInfo | null>(null);
-    const [connecting, setConnecting] = useState(false);
-    const [status, setStatus] = useState<Status>("idle");
-    const [activeAction, setActiveAction] = useState<ActionType>(null);
-    const [progressMsg, setProgressMsg] = useState("");
-    const [modalVisible, setModalVisible] = useState(false);
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const formatSize = (bytes: string) => `${(Number(bytes) / (1024 * 1024)).toFixed(1)} MB`;
 
-    useEffect(() => {
-        restorePreviousSignIn();
-    }, []);
+export default function BackupScreen() {
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+  const [backup, setBackup] = useState<Backup | null>(null);
+  const [busy, setBusy] = useState<string | null>(null); // what's running, shown to the user
 
-    const restorePreviousSignIn = async () => {
-        try {
-            setConnecting(true);
+  // Password box. "create": first backup on this phone; "enter": restoring
+  const [ask, setAsk] = useState<{ mode: "create" | "enter"; done: (pw: string | null) => void } | null>(null);
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const askPassword = (mode: "create" | "enter") =>
+    new Promise<string | null>((done) => {
+      setPw("");
+      setPw2("");
+      setAsk({ mode, done });
+    });
+  const closeAsk = (value: string | null) => {
+    ask?.done(value);
+    setAsk(null);
+  };
+  const submitPassword = () => {
+    if (pw.length < 6) return Alert.alert("Too short", "Use at least 6 characters.");
+    if (ask?.mode === "create" && pw !== pw2) return Alert.alert("Passwords don't match", "Type the same password twice.");
+    closeAsk(pw);
+  };
 
-            const currentUser = GoogleSignin.getCurrentUser();
-            if (!currentUser) return;
+  const loadBackup = async () => setBackup(await findBackup(await getToken()));
 
-            const userInfo = await GoogleSignin.signInSilently();
-            const grantedScopes = userInfo.data?.scopes ?? [];
-            const hasDriveScope = grantedScopes.includes('https://www.googleapis.com/auth/drive.appdata');
+  // Already connected before: pick up where we left off
+  useEffect(() => {
+    if (!GoogleSignin.getCurrentUser()) return;
+    setBusy("Connecting…");
+    GoogleSignin.signInSilently()
+      .then(async (res) => {
+        setEmail(res.data?.user.email ?? null);
+        await loadBackup();
+      })
+      .catch(() => setEmail(null))
+      .finally(() => setBusy(null));
+  }, []);
 
-            if (!hasDriveScope) {
-                await GoogleSignin.signOut();
-                return;
-            }
+  const connect = async () => {
+    setBusy("Connecting…");
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const res = await GoogleSignin.signIn();
+      if (res.type !== "success") return;
+      setEmail(res.data.user.email);
+      await loadBackup();
+    } catch (err: any) {
+      Alert.alert("Couldn't connect", err?.message ?? "Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
-            const tokens = await GoogleSignin.getTokens();
-            const credential = GoogleAuthProvider.credential(userInfo.data?.idToken);
-            const result = await signInWithCredential(getAuth(), credential);
+  const disconnect = async () => {
+    await GoogleSignin.signOut();
+    setEmail(null);
+    setBackup(null);
+  };
 
-            setAccessToken(tokens.accessToken);
-            setUserEmail(result.user.email ?? null);
+  const runBackup = async () => {
+    let password = await savedBackupPassword();
+    if (!password) {
+      password = await askPassword("create");
+      if (!password) return;
+      await saveBackupPassword(password);
+    }
+    setBusy("Backing up…");
+    try {
+      await backUp(await getToken(), password);
+      await loadBackup();
+      Alert.alert("Backup done", "Your chats are saved to Google Drive.");
+    } catch (err: any) {
+      Alert.alert("Backup failed", err?.message ?? "Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
-            const info = await findBackupOnDrive(tokens.accessToken);
-            setBackupInfo(info);
-        } catch (e) {
-            console.info('No previous session:', e);
-        } finally {
-            setConnecting(false);
-        }
-    };
+  const askRestore = () =>
+    Alert.alert("Restore backup?", "Your chats on this phone will be replaced with the backup. The app restarts after.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Restore",
+        style: "destructive",
+        onPress: async () => {
+          const password = await askPassword("enter");
+          if (!password) return;
+          setBusy("Restoring…");
+          try {
+            await restore(await getToken(), backup!, password);
+          } catch (err: any) {
+            setBusy(null);
+            Alert.alert("Restore failed", err?.message ?? "Try again.");
+          }
+        },
+      },
+    ]);
 
-    const connectGoogle = async () => {
-        try {
-            setConnecting(true);
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+      <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
+      <View style={SettingsStyle.header}>
+        <TouchableOpacity style={SettingsStyle.backBtn} onPress={() => router.back()} disabled={!!busy}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={SettingsStyle.headerTitle}>Backup & Restore</Text>
+      </View>
 
-            await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-            const signInResult = await GoogleSignin.signIn();
+      <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={s.body}>
+        {/* Google Drive account */}
+        <View style={s.card}>
+          <Ionicons name="logo-google" size={26} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.title}>Google Drive</Text>
+            <Text style={s.sub}>{email ?? "Not connected"}</Text>
+            {email && (
+              <Text style={s.sub}>
+                {backup ? `Last backup: ${formatDate(backup.modifiedTime)} · ${formatSize(backup.size)}` : "No backup yet"}
+              </Text>
+            )}
+          </View>
+          {!busy && (
+            <TouchableOpacity onPress={email ? disconnect : connect}>
+              <Text style={[s.link, email && { color: colors.danger }]}>{email ? "Disconnect" : "Connect"}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
-            let idToken = signInResult.data?.idToken;
-            if (!idToken) {
-                idToken = signInResult.data?.idToken;
-            }
-            if (!idToken) {
-                throw new Error('No ID token found');
-            }
+        {busy ? (
+          <View style={s.busy}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={s.sub}>{busy}</Text>
+          </View>
+        ) : (
+          <>
+            <TouchableOpacity style={[s.btn, !email && s.disabled]} onPress={runBackup} disabled={!email}>
+              <Ionicons name="cloud-upload-outline" size={20} color={colors.textOnPrimary} />
+              <Text style={s.btnText}>Back up now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.btnOutline, !backup && s.disabled]} onPress={askRestore} disabled={!backup}>
+              <Ionicons name="cloud-download-outline" size={20} color={colors.primary} />
+              <Text style={s.btnOutlineText}>Restore backup</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
-            const googleCredential = GoogleAuthProvider.credential(signInResult?.data?.idToken);
+        <Text style={s.note}>
+          Backups are encrypted with your backup password before they leave this phone, so only you can read
+          them. Keep the password safe: without it a backup can't be restored. Photos and videos stay online
+          and are not part of the backup.
+        </Text>
+      </ScrollView>
 
-            const result = await signInWithCredential(getAuth(), googleCredential);
-            if (!result) return;
-
-            const tokens = await GoogleSignin.getTokens();
-            const token = tokens.accessToken;
-
-            setAccessToken(token);
-            setUserEmail(result.user.email ?? null);
-
-            const info = await findBackupOnDrive(token);
-            setBackupInfo(info);
-        } catch (e: any) {
-            Alert.alert("Sign in failed", e.message);
-        } finally {
-            setConnecting(false);
-        }
-    };
-
-    const disconnectGoogle = async () => {
-        await GoogleSignin.signOut();
-        setAccessToken(null);
-        setUserEmail(null);
-        setBackupInfo(null);
-    };
-
-    const runAction = async (action: ActionType) => {
-        if (!accessToken) {
-            Alert.alert("Not connected", "Please connect to Google Drive first.");
-            return;
-        }
-        setActiveAction(action);
-        setStatus("loading");
-        setProgressMsg("");
-        setModalVisible(true);
-        try {
-            if (action === "backup") {
-                await backupToGoogleDrive(accessToken, setProgressMsg);
-            } else {
-                await restoreFromGoogleDrive(accessToken, setProgressMsg);
-            }
-            setStatus("success");
-            const info = await findBackupOnDrive(accessToken);
-            setBackupInfo(info);
-        } catch (e: any) {
-            setStatus("error");
-            setProgressMsg(e.message || "Something went wrong.");
-        }
-    };
-
-    const confirmRestore = () => {
-        Alert.alert(
-            "Restore Backup?",
-            "This will overwrite your current data with the backup from Google Drive. You will need to restart the app after restoring.",
-            [
-                { text: "Cancel", style: "cancel" },
-                { text: "Restore", style: "destructive", onPress: () => runAction("restore") },
-            ]
-        );
-    };
-
-    const closeModal = () => {
-        setModalVisible(false);
-        setStatus("idle");
-        setActiveAction(null);
-        setProgressMsg("");
-    };
-
-    return (
-        <SafeAreaView style={{ ...styles.container, paddingTop: 0 }}>
-            <StatusBar barStyle="light-content" backgroundColor="#0a0a0f" />
-
-            <View style={s.header}>
-                <Text style={s.headerTitle}>Backup & Restore</Text>
-                <Text style={s.headerSub}>Keep your chats safe on Google Drive</Text>
+      <Modal visible={!!ask} transparent animationType="fade" onRequestClose={() => closeAsk(null)}>
+        <View style={s.overlay}>
+          <View style={s.dialog}>
+            <Text style={s.title}>{ask?.mode === "create" ? "Create a backup password" : "Enter backup password"}</Text>
+            <Text style={s.sub}>
+              {ask?.mode === "create"
+                ? "Your backup is locked with this password. You'll need it to restore on a new phone."
+                : "The password you set when you made this backup."}
+            </Text>
+            <TextInput style={s.input} value={pw} onChangeText={setPw} placeholder="Password" placeholderTextColor={colors.textMuted} secureTextEntry autoFocus />
+            {ask?.mode === "create" && (
+              <TextInput style={s.input} value={pw2} onChangeText={setPw2} placeholder="Type it again" placeholderTextColor={colors.textMuted} secureTextEntry />
+            )}
+            <View style={s.dialogButtons}>
+              <TouchableOpacity onPress={() => closeAsk(null)}>
+                <Text style={[s.link, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={submitPassword}>
+                <Text style={s.link}>{ask?.mode === "create" ? "Save" : "Restore"}</Text>
+              </TouchableOpacity>
             </View>
-
-            <ScrollView contentContainerStyle={s.scroll}>
-                <View style={s.card}>
-                    <View style={s.cardRow}>
-                        <View style={s.driveIcon}>
-                            <Text style={s.driveIconText}>G</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={s.cardTitle}>Google Drive</Text>
-                            {userEmail ? (
-                                <>
-                                    <Text style={s.cardMeta}>{userEmail}</Text>
-                                    {backupInfo ? (
-                                        <>
-                                            <Text style={s.cardMeta}>Last backup: {formatDate(backupInfo.modifiedTime)}</Text>
-                                            <Text style={s.cardMeta}>Size: {formatBytes(backupInfo.size)}</Text>
-                                        </>
-                                    ) : (
-                                        <Text style={s.cardMetaDim}>No backup found</Text>
-                                    )}
-                                </>
-                            ) : (
-                                <Text style={s.cardMetaDim}>Not connected</Text>
-                            )}
-                        </View>
-
-                        {connecting ? (
-                            <ActivityIndicator size="small" color="#4ade80" />
-                        ) : userEmail ? (
-                            <TouchableOpacity onPress={disconnectGoogle} style={s.disconnectBtn}>
-                                <Text style={s.disconnectText}>Disconnect</Text>
-                            </TouchableOpacity>
-                        ) : (
-                            <TouchableOpacity onPress={connectGoogle} style={s.connectBtn}>
-                                <Text style={s.connectText}>Connect</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </View>
-
-                <View style={[s.actionCard, !userEmail && s.cardDisabled]}>
-                    <View style={s.actionInfo}>
-                        <Text style={s.actionIcon}>☁️</Text>
-                        <View style={{ flex: 1 }}>
-                            <Text style={s.actionTitle}>Back Up Now</Text>
-                            <Text style={s.actionDesc}>
-                                Upload your current database to Google Drive. Previous backup will be replaced.
-                            </Text>
-                        </View>
-                    </View>
-                    <TouchableOpacity
-                        style={[s.btnPrimary, !userEmail && s.btnDisabled]}
-                        onPress={() => runAction("backup")}
-                        disabled={!userEmail}
-                    >
-                        <Text style={s.btnPrimaryText}>Back Up</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View style={[s.actionCard, (!userEmail || !backupInfo) && s.cardDisabled]}>
-                    <View style={s.actionInfo}>
-                        <Text style={s.actionIcon}>📲</Text>
-                        <View style={{ flex: 1 }}>
-                            <Text style={s.actionTitle}>Restore Backup</Text>
-                            <Text style={s.actionDesc}>
-                                Download and restore your backup from Google Drive. Current data will be overwritten.
-                            </Text>
-                        </View>
-                    </View>
-                    <TouchableOpacity
-                        style={[s.btnSecondary, (!userEmail || !backupInfo) && s.btnDisabled]}
-                        onPress={confirmRestore}
-                        disabled={!userEmail || !backupInfo}
-                    >
-                        <Text style={s.btnSecondaryText}>Restore</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View style={s.note}>
-                    <Text style={s.noteText}>
-                        ⚠️ After restoring, the app must be restarted for changes to take effect.
-                    </Text>
-                </View>
-            </ScrollView>
-
-            {/* Progress Modal */}
-            <Modal visible={modalVisible} transparent animationType="fade">
-                <View style={s.overlay}>
-                    <View style={s.modalBox}>
-                        <Text style={s.modalTitle}>
-                            {activeAction === "backup" ? "Backing Up..." : "Restoring..."}
-                        </Text>
-
-                        {status === "loading" && (
-                            <>
-                                <ActivityIndicator size="large" color="#4ade80" style={{ marginVertical: 20 }} />
-                                <Text style={s.progressMsg}>{progressMsg}</Text>
-                            </>
-                        )}
-
-                        {status === "success" && (
-                            <>
-                                <Text style={s.successIcon}>✅</Text>
-                                <Text style={s.progressMsg}>{progressMsg}</Text>
-                                <TouchableOpacity
-                                    style={[s.btnPrimary, { width: "100%", marginTop: 12 }]}
-                                    onPress={closeModal}
-                                >
-                                    <Text style={s.btnPrimaryText}>Done</Text>
-                                </TouchableOpacity>
-                            </>
-                        )}
-
-                        {status === "error" && (
-                            <>
-                                <Text style={s.errorIcon}>❌</Text>
-                                <Text style={s.errorMsg}>{progressMsg}</Text>
-                                <TouchableOpacity
-                                    style={[s.btnSecondary, { width: "100%", marginTop: 12 }]}
-                                    onPress={closeModal}
-                                >
-                                    <Text style={s.btnSecondaryText}>Close</Text>
-                                </TouchableOpacity>
-                            </>
-                        )}
-                    </View>
-                </View>
-            </Modal>
-        </SafeAreaView>
-    );
-};
-
-export default BackupScreen;
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
 
 const s = StyleSheet.create({
-    header: {
-        paddingTop: 60, paddingBottom: 24, paddingHorizontal: 24,
-        borderBottomWidth: 1, borderBottomColor: "#1e1e2a",
-    },
-    headerTitle: { fontSize: 26, fontWeight: "700", color: "#f0f0f5", letterSpacing: 0.3 },
-    headerSub: { fontSize: 13, color: "#5a5a72", marginTop: 4 },
-
-    scroll: { padding: 20, gap: 16 },
-
-    card: {
-        backgroundColor: "#13131a", borderRadius: 16,
-        padding: 16, borderWidth: 1, borderColor: "#1e1e2a",
-    },
-    cardRow: { flexDirection: "row", alignItems: "center", gap: 14 },
-    cardDisabled: { opacity: 0.5 },
-    driveIcon: {
-        width: 44, height: 44, borderRadius: 12,
-        backgroundColor: "#1a2a4a", justifyContent: "center", alignItems: "center",
-    },
-    driveIconText: { fontSize: 20, fontWeight: "800", color: "#4b9fff" },
-    cardTitle: { fontSize: 15, fontWeight: "600", color: "#e0e0ea" },
-    cardMeta: { fontSize: 12, color: "#5a5a72", marginTop: 2 },
-    cardMetaDim: { fontSize: 12, color: "#3a3a50", marginTop: 2 },
-
-    connectBtn: {
-        backgroundColor: "#1a3a2a", borderRadius: 8,
-        paddingHorizontal: 12, paddingVertical: 7,
-        borderWidth: 1, borderColor: "#2a5a3a",
-    },
-    connectText: { fontSize: 12, color: "#4ade80", fontWeight: "600" },
-    disconnectBtn: {
-        backgroundColor: "#2a1a1a", borderRadius: 8,
-        paddingHorizontal: 12, paddingVertical: 7,
-        borderWidth: 1, borderColor: "#4a2a2a",
-    },
-    disconnectText: { fontSize: 12, color: "#f87171", fontWeight: "600" },
-
-    actionCard: {
-        backgroundColor: "#13131a", borderRadius: 16,
-        padding: 18, borderWidth: 1, borderColor: "#1e1e2a", gap: 14,
-    },
-    actionInfo: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
-    actionIcon: { fontSize: 28 },
-    actionTitle: { fontSize: 15, fontWeight: "600", color: "#e0e0ea", marginBottom: 4 },
-    actionDesc: { fontSize: 12, color: "#5a5a72", lineHeight: 18 },
-
-    btnPrimary: {
-        backgroundColor: "#4ade80", borderRadius: 12,
-        paddingVertical: 13, alignItems: "center",
-    },
-    btnPrimaryText: { color: "#0a0a0f", fontWeight: "700", fontSize: 15 },
-
-    btnSecondary: {
-        backgroundColor: "transparent", borderRadius: 12,
-        paddingVertical: 13, alignItems: "center",
-        borderWidth: 1, borderColor: "#2e2e3e",
-    },
-    btnSecondaryText: { color: "#e0e0ea", fontWeight: "600", fontSize: 15 },
-    btnDisabled: { opacity: 0.4 },
-
-    note: {
-        backgroundColor: "#1a1208", borderRadius: 12,
-        padding: 14, borderWidth: 1, borderColor: "#2e2208",
-    },
-    noteText: { fontSize: 12, color: "#a07830", lineHeight: 18 },
-
-    overlay: {
-        flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
-        justifyContent: "center", alignItems: "center", padding: 24,
-    },
-    modalBox: {
-        backgroundColor: "#13131a", borderRadius: 20,
-        padding: 28, width: "100%", alignItems: "center",
-        borderWidth: 1, borderColor: "#1e1e2a", gap: 8,
-    },
-    modalTitle: { fontSize: 18, fontWeight: "700", color: "#f0f0f5", marginBottom: 4 },
-    progressMsg: { fontSize: 13, color: "#5a5a72", textAlign: "center" },
-    successIcon: { fontSize: 48, marginVertical: 8 },
-    errorIcon: { fontSize: 48, marginVertical: 8 },
-    errorMsg: { fontSize: 13, color: "#f87171", textAlign: "center" },
+  body: { padding: 16, gap: 14 },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: 16,
+  },
+  title: { fontSize: 15, fontWeight: "700", color: colors.text },
+  sub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  link: { fontSize: 14, fontWeight: "700", color: colors.primary },
+  busy: { alignItems: "center", gap: 8, paddingVertical: 24 },
+  btn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+  },
+  btnText: { color: colors.textOnPrimary, fontSize: 15, fontWeight: "700" },
+  btnOutline: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+  },
+  btnOutlineText: { color: colors.primary, fontSize: 15, fontWeight: "700" },
+  disabled: { opacity: 0.4 },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 },
+  dialog: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 20, gap: 10 },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.text,
+    backgroundColor: colors.surfaceAlt,
+  },
+  dialogButtons: { flexDirection: "row", justifyContent: "flex-end", gap: 24, marginTop: 6 },
+  note: { fontSize: 12, color: colors.textMuted, lineHeight: 18, textAlign: "center", marginTop: 8 },
 });

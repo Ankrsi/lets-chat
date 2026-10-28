@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAccessToken } from "@/utils/tokens";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Animated, PanResponder, StatusBar, Text, TouchableOpacity, View } from 'react-native';
@@ -48,7 +49,7 @@ export default function Index() {
 
   useEffect(() => {
     (async () => {
-      const t = await AsyncStorage.getItem("token");
+      const t = await getAccessToken();
       if (!t) return;
 
       // Logged in but no username cached: either sign-up wasn't finished or the

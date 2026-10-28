@@ -3,7 +3,7 @@ import CountryPicker, { deviceCountry } from "@/app/components/CountryPicker";
 import { COUNTRIES } from "@/utils/countries";
 import { CountryCode, parsePhoneNumberFromString } from "libphonenumber-js";
 import metadata from "libphonenumber-js/metadata.min.json";
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 import { AuthAPI, apiErrorMessage } from "@/utils/api";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -60,14 +60,14 @@ export default function LoginScreen() {
       style={{ flex: 1, backgroundColor: colors.surface }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
       <ScrollView
         contentContainerStyle={LoginStyles.scroll}
         keyboardShouldPersistTaps="handled"
       >
         {/* ── Header ── */}
         <View style={LoginStyles.header}>
-          <BrandMark icon="chatbubbles" />
+          <BrandMark />
           <Text style={LoginStyles.headerTitle}>Welcome</Text>
           <Text style={LoginStyles.headerSub}>Log in or create an account</Text>
           <Text style={LoginStyles.headerDesc}>{"Enter your phone number. New here? We'll set up your account after you verify it."}</Text>

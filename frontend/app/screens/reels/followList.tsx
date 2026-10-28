@@ -1,5 +1,5 @@
 import { ReelStyles, SectionTabStyles, SettingsStyle } from "@/app/styles";
-import { colors } from "@/theme";
+import { colors, statusBarStyle } from "@/theme";
 import { displayName, fetchFollowList, FollowListUser, followUser, unfollowUser } from "@/utils/reels";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -107,7 +107,7 @@ export default function FollowListScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle={statusBarStyle} backgroundColor={colors.surface} />
       <View style={SettingsStyle.header}>
         <TouchableOpacity style={SettingsStyle.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
