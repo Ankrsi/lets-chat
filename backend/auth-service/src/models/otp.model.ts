@@ -27,3 +27,25 @@ const otpSchema = new Schema<IOtp>(
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const Otp = model<IOtp>("Otp", otpSchema);
+
+// SMS codes sent per phone per day (stops SMS bombing and SMS-cost abuse). Removed after a day.
+export interface IOtpDaily {
+  phone: string;
+  day: string; // YYYY-MM-DD (UTC)
+  count: number;
+  createdAt: Date;
+}
+
+const otpDailySchema = new Schema<IOtpDaily>(
+  {
+    phone: { type: String, required: true },
+    day: { type: String, required: true },
+    count: { type: Number, default: 0 },
+    createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 },
+  },
+  { collection: "otp_daily" },
+);
+
+otpDailySchema.index({ phone: 1, day: 1 }, { unique: true });
+
+export const OtpDaily = model<IOtpDaily>("OtpDaily", otpDailySchema);

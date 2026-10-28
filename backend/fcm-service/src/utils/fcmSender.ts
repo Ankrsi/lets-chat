@@ -124,16 +124,6 @@ export const sendMessageToDevice = async ({
   webpush
 }: FCMMessageParams) => {
 
-  console.info('data to send msg ', {
-    token,
-    notification,
-    data,
-    device_type,
-    android,
-    apns,
-    webpush
-  })
-
   const safeData = stringifyData(data);
 
   const message: any = {

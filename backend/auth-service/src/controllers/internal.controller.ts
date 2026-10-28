@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiResponse } from "../utils/apiResponse";
-import { User } from "../models/user.model";
+import { publicPhoto, User } from "../models/user.model";
 import { Session } from "../models/session.model";
 
 // Service-to-service endpoints (x-internal-api-key). Shapes match what
@@ -10,9 +10,10 @@ import { Session } from "../models/session.model";
 export const getUsersByPhones = asyncHandler(async (req: Request, res: Response) => {
   const phones = [...new Set((req.body.phones as (string | number)[]).map((p) => String(p).replace(/\D/g, "")))];
   const users = await User.find({ phone: { $in: phones } })
-    .select("phone username first_name last_name about profile_image email")
+    .select("phone username first_name last_name about profile_image photoVisibility")
     .lean();
-  return new ApiResponse(200, users, "Users fetched");
+  const visible = users.map(({ photoVisibility, ...u }) => ({ ...u, profile_image: publicPhoto({ profile_image: u.profile_image, photoVisibility }) }));
+  return new ApiResponse(200, visible, "Users fetched");
 });
 
 const pushTargets = async (phone: string, field: "fcmToken" | "voipToken") => {

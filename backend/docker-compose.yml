@@ -52,6 +52,7 @@ services:
     build: ./fcm-service
     image: ${DOCKER_USER:-lets-chat}/lets-chat:fcm-${TAG:-latest}
     env_file: ./fcm-service/.env
-    ports:
-      - "4019:4019"
+    # No published port: only the other services reach it, over the compose network
+    expose:
+      - "4019"
     restart: unless-stopped

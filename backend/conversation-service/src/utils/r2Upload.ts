@@ -34,7 +34,10 @@ export const uploadToR2 = async ({ file, folder = "" }: UploadParams): Promise<s
 };
 
 export const presignedUrlR2 = async (fileName: string, conversationId: string, mediaType: string) => {
-  const key = `chats/${conversationId}/${Date.now()}_${fileName}`;
+  // Plain characters only: no "../" or slashes to escape the folder
+  const safeName = String(fileName).replace(/[^\w.-]/g, "_").slice(-100);
+  const safeConversation = String(conversationId).replace(/[^\w-]/g, "");
+  const key = `chats/${safeConversation}/${Date.now()}_${safeName}`;
   const command = new PutObjectCommand({
     Bucket: process.env.R2_BUCKET_NAME!,
     Key: key,

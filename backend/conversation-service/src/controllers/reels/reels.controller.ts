@@ -28,6 +28,8 @@ const toReelResponse = (reel: IReel, profiles: Map<string, any>, me: string, lik
   videoUrl: reel.videoUrl, // older app versions read this
   caption: reel.caption,
   duration: reel.duration ?? null,
+  width: reel.width ?? null,
+  height: reel.height ?? null,
   // Every photo of a photo reel, swiped left to right (one entry for a single photo)
   photos: reel.photos?.length ? reel.photos.map((p) => p.url) : reel.type === "image" ? [reel.videoUrl] : null,
   createdAt: reel.createdAt,
@@ -63,12 +65,14 @@ export const getReelUploadUrl = asyncHandler(async (req: Request, res: Response)
   return new ApiResponse(200, { uploadUrl, fileUrl, maxBytes }, "Upload URL created");
 });
 
+const dimension = (v: unknown) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) <= 10000;
+
 const discard = (keys: string[]) =>
   Promise.all(keys.map((k) => deleteR2Object(k).catch((e) => console.error("delete rejected reel upload failed", e))));
 
 export const createReel = asyncHandler(async (req: Request, res: Response) => {
   const me = String(req.user.phone);
-  const { fileUrl, fileUrls, caption = "", duration } = req.body;
+  const { fileUrl, fileUrls, caption = "", duration, width, height } = req.body;
 
   const urls: unknown[] = Array.isArray(fileUrls) ? fileUrls : [fileUrl];
   if (!urls.length || urls.length > MAX_PHOTOS) return new ApiResponse(400, null, `A reel can have 1 to ${MAX_PHOTOS} photos`);
@@ -102,6 +106,7 @@ export const createReel = asyncHandler(async (req: Request, res: Response) => {
     key: keys[0],
     caption: caption.trim(),
     duration: type === "video" && Number.isFinite(Number(duration)) ? Math.round(Number(duration)) : undefined,
+    ...(type === "video" && dimension(width) && dimension(height) ? { width: Number(width), height: Number(height) } : {}),
     size: objects.reduce((sum, o) => sum + o!.size, 0),
     photos: keys.length > 1 ? keys.map((key, i) => ({ url: urls[i] as string, key: key!, size: objects[i]!.size })) : undefined,
   });

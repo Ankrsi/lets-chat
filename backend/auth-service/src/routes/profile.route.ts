@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { verifyUser } from "../middlewares/verifyUser";
 import { verifyInternalRequest } from "../middlewares/internal-auth.middleware";
 import { validate } from "../middlewares/validate";
@@ -7,16 +8,20 @@ import {
   blockSchema,
   changeUsernameSchema,
   deviceTokensSchema,
+  disableTwoStepSchema,
   phoneSchema,
   removePushTokenSchema,
+  setTwoStepSchema,
   updateProfileSchema,
   usernameQuerySchema,
 } from "../validations/schemas";
 import {
   changeUsername,
+  disableTwoStep,
   getMyProfile,
   getUserByUsername,
   removeProfileImage,
+  setTwoStep,
   updateDeviceTokens,
   updateMyProfile,
   updateProfileImage,
@@ -31,12 +36,24 @@ import {
 
 const router = Router();
 
+// Slows down guessing the two-step code (checkPin also locks it after 5 wrong tries)
+const limit = (max: number) =>
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: max,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { success: false, message: "Too many requests, please try again later" },
+  });
+
 router.get("/me", verifyUser, getMyProfile);
 router.patch("/me", verifyUser, validate(updateProfileSchema), updateMyProfile);
 router.patch("/username", verifyUser, validate(changeUsernameSchema), changeUsername);
 router.patch("/update-profile-image", verifyUser, uploadProfileImage, updateProfileImage);
 router.delete("/profile-image", verifyUser, removeProfileImage);
 router.patch("/device-tokens", verifyUser, validate(deviceTokensSchema), updateDeviceTokens);
+router.put("/two-step", verifyUser, limit(20), validate(setTwoStepSchema), setTwoStep);
+router.post("/two-step/disable", verifyUser, limit(20), validate(disableTwoStepSchema), disableTwoStep);
 router.get("/user/:username", verifyUser, validate(usernameQuerySchema, "params"), getUserByUsername);
 
 /////// internal hooks /////////

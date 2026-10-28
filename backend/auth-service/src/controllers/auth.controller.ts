@@ -8,8 +8,10 @@ import { checkOtp, consumeOtp, sendOtp } from "../services/otp.service";
 import { createSession, reissueAccessToken, rotateRefreshToken } from "../services/token.service";
 import { notifyNewLogin } from "../services/conversation.service";
 import { generateIceServers } from "../services/turn.service";
+import { checkPin } from "../services/twoStep.service";
 
 const isDuplicateKey = (err: any) => err?.code === 11000;
+const TWO_STEP_RESET_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const generateOtp = asyncHandler(async (req: Request, res: Response) => {
   await sendOtp(req.body.phone);
@@ -17,7 +19,7 @@ export const generateOtp = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
-  const { phone, otp, deviceId, fcm_token, voip_token, device_type, appName, forceLogin } = req.body;
+  const { phone, otp, deviceId, fcm_token, voip_token, device_type, appName, forceLogin, pin, forgotPin } = req.body;
 
   await checkOtp(phone, otp);
 
@@ -26,6 +28,28 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
     { $setOnInsert: { phone } },
     { upsert: true, new: true },
   );
+
+  // Two-step verification: the OTP alone isn't enough. The OTP stays valid so the app can
+  // send it again together with the code.
+  if (user.twoStepEnabled) {
+    const resetAt = user.twoStepResetAt;
+    if (resetAt && resetAt.getTime() <= Date.now()) {
+      // "Forgot code" waiting time is over: two-step turns off and the OTP is enough
+      await User.updateOne({ _id: user._id }, { $set: { twoStepEnabled: false }, $unset: { twoStepPinHash: 1, twoStepResetAt: 1, twoStepLockedUntil: 1 } });
+      user.twoStepEnabled = false;
+    } else if (forgotPin) {
+      // Starts a 7-day wait (WhatsApp-style), so someone with only a stolen SMS code can't get in fast
+      const at = resetAt ?? new Date(Date.now() + TWO_STEP_RESET_MS);
+      if (!resetAt) await User.updateOne({ _id: user._id }, { $set: { twoStepResetAt: at } });
+      return new ApiResponse(200, { requiresPin: true, resetAt: at }, "Two-step verification will turn off after the waiting time");
+    } else if (!pin) {
+      return new ApiResponse(200, { requiresPin: true, resetAt: resetAt ?? null }, "Enter your two-step verification code");
+    } else {
+      await checkPin(user._id, pin);
+      // Remembered the code: cancel a pending reset
+      if (resetAt) await User.updateOne({ _id: user._id }, { $unset: { twoStepResetAt: 1 } });
+    }
+  }
 
   const otherDevices = await Session.countDocuments({ userId: user._id, deviceId: { $ne: deviceId } });
   if (otherDevices > 0) {

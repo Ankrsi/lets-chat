@@ -11,10 +11,20 @@ import { getUsersByPhones } from "../../services/auth/phone.service";
 import { sendBasicFCMNotification } from "../../services/chatBasicFcm.service";
 import { notifyMembers } from "../../utils/notifyMembers";
 
+// Types a browser would run if opened from the public storage domain (phishing pages, script)
+const isRunnableType = (type: string) => /html|svg|xml|javascript|ecmascript/i.test(type);
+
 export const getPresignedUrlInChat = asyncHandler(async (req: Request, res: Response) => {
   const { conversationId, data } = req.body;
   if (!conversationId || !Array.isArray(data) || !data.length || data.some((d: any) => !d?.fileName || !d?.mediaType)) {
     return new ApiResponse(400, null, "Data missing, please check");
+  }
+  if (data.length > 10) return new ApiResponse(400, null, "At most 10 files at a time");
+  if (!(await getConversationMembers(conversationId)).map(String).includes(String(req.user?.phone))) {
+    return new ApiResponse(403, null, "Not a member of this conversation");
+  }
+  if (data.some((d: any) => isRunnableType(String(d.mediaType)))) {
+    return new ApiResponse(400, null, "This file type can't be sent");
   }
   const result = await Promise.all(data.map(async ({ fileName, mediaType }: any) => {
     const { uploadUrl, fileUrl } = await presignedUrlR2(fileName, conversationId, mediaType);
@@ -479,8 +489,9 @@ export const blockUser = asyncHandler(async (req: Request, res: Response) => {
   try {
     let data = await blockContacts(req.user?.phone, no);
     if (data.success) {
+      // Only the chat between these two people
       await Conversation.findOneAndUpdate(
-        { _id: conversationId },
+        { _id: conversationId, members: { $all: [String(req.user?.phone), String(no)] } },
         {
           blocked: true,
           $addToSet: { blockedBy: req.user?.phone.toString() }
@@ -758,7 +769,6 @@ const getUserInfoFun = async (phones: string[]) => {
       userId: user ? String(user._id) : null,
       full_name: user ? `${user.first_name} ${user.last_name}` : null,
       profile_image: user?.profile_image || null,
-      email: user?.email || null,
       isOnboarded: !!user,
     };
   });

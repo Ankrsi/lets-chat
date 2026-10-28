@@ -1,0 +1,4 @@
+
+# TURN server secrets (old self-hosted TURN; the app now uses Cloudflare)
+backend/conversation-service/docker-soft/turn-server/certs/
+backend/conversation-service/docker-soft/turn-server/turnserver.conf

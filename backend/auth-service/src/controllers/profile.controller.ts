@@ -7,6 +7,7 @@ import { Session } from "../models/session.model";
 import { uploadProfileImage } from "../utils/r2Upload";
 import { reissueAccessToken } from "../services/token.service";
 import { notifyProfileChanged } from "../services/conversation.service";
+import { checkPin, hashPin } from "../services/twoStep.service";
 
 const findMe = async (req: Request) => {
   const user = await User.findById(req.user!._id);
@@ -20,12 +21,13 @@ export const getMyProfile = asyncHandler(async (req: Request, res: Response) => 
 
 export const updateMyProfile = asyncHandler(async (req: Request, res: Response) => {
   const user = await findMe(req);
-  const { first_name, last_name, about, email } = req.body;
+  const { first_name, last_name, about, email, photoVisibility } = req.body;
 
   if (first_name !== undefined) user.first_name = first_name;
   if (last_name !== undefined) user.last_name = last_name;
   if (about !== undefined) user.about = about;
   if (email !== undefined) user.email = email || undefined; // "" or null removes it
+  if (photoVisibility !== undefined) user.photoVisibility = photoVisibility;
   await user.save();
 
   notifyProfileChanged(user.phone);
@@ -95,4 +97,28 @@ export const updateDeviceTokens = asyncHandler(async (req: Request, res: Respons
 
   await Session.updateOne({ _id: req.user!.sid }, { $set, $unset });
   return new ApiResponse(200, null, "Device tokens updated");
+});
+
+// Turn on two-step verification, or change the code (needs the current one)
+export const setTwoStep = asyncHandler(async (req: Request, res: Response) => {
+  const user = await findMe(req);
+  if (user.twoStepEnabled) {
+    if (!req.body.currentPin) throw new ApiError("Enter your current code", 400);
+    await checkPin(user._id, req.body.currentPin);
+  }
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { twoStepEnabled: true, twoStepPinHash: await hashPin(req.body.pin), twoStepFailed: 0 }, $unset: { twoStepLockedUntil: 1 } },
+  );
+  return new ApiResponse(200, { twoStepEnabled: true }, user.twoStepEnabled ? "Code changed" : "Two-step verification on");
+});
+
+export const disableTwoStep = asyncHandler(async (req: Request, res: Response) => {
+  const user = await findMe(req);
+  if (user.twoStepEnabled) await checkPin(user._id, req.body.pin);
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { twoStepEnabled: false, twoStepFailed: 0 }, $unset: { twoStepPinHash: 1, twoStepLockedUntil: 1 } },
+  );
+  return new ApiResponse(200, { twoStepEnabled: false }, "Two-step verification off");
 });

@@ -16,7 +16,8 @@ export const addStatus = asyncHandler(async (req: Request, res: Response) => {
     }
     try {
         const files = req.files as Express.Multer.File[];
-        const timestamp = req.body.timestamp ? new Date(req.body.timestamp) : new Date();
+        // Server time: a client-sent date could make a story never expire
+        const timestamp = new Date();
         const captions = Array.isArray(req.body.captions) ? req.body.captions : [req.body.captions];
         const typeOf = (f: Express.Multer.File) =>
             f.mimetype.startsWith("image/") ? "image" : f.mimetype.startsWith("video/") ? "video" : null;
@@ -69,7 +70,19 @@ export const getAllStatus = asyncHandler(async (req: Request, res: Response) => 
     try {
         const contactsData: any = await AllFriendsContact.findOne({ phone: req.user.phone }).select("-_id contacts.phone").lean();
 
-        let phoneNumbers = contactsData?.contacts?.map((c: any) => c.phone.toString()) || [];
+        let phoneNumbers: string[] = contactsData?.contacts?.map((c: any) => c.phone.toString()) || [];
+
+        // Only people who have me in their contacts and haven't blocked me
+        const viewer = req.user.phone.toString();
+        const owners: any[] = await AllFriendsContact.find({ phone: { $in: phoneNumbers } })
+            .select("-_id phone contacts.phone blockedPhones")
+            .lean();
+        const allowed = new Set(
+            owners
+                .filter((o) => o.contacts?.some((c: any) => String(c.phone) === viewer) && !(o.blockedPhones ?? []).map(String).includes(viewer))
+                .map((o) => String(o.phone)),
+        );
+        phoneNumbers = phoneNumbers.filter((p) => allowed.has(p));
 
         const privacySettings = await StatusPrivacy.find({
             userId: { $in: phoneNumbers },

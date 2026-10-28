@@ -157,11 +157,25 @@ export const chatHandler = (
   });
 
   // Which of these members are online: one MGET instead of one GET per member
+  // Privacy: "show my online status" on/off, sent by the app when it connects and when changed
+  socket.on("privacy:online", async ({ show }) => {
+    const me = socket.user?.phone?.toString();
+    if (!me) return;
+    try {
+      if (show === false) await redisClient.set(`user:${me}:hideOnline`, "1");
+      else await redisClient.del(`user:${me}:hideOnline`);
+    } catch (err) {
+      console.info("privacy:online error:", err);
+    }
+  });
+
   socket.on("chat:status", async ({ conversationId, username, members = [] }) => {
     try {
       const others: string[] = (members as string[]).filter((m) => m != username);
       const states = await getMany(redisPub, others.map((m) => `user:${m}:online`));
-      const online = others.filter((_, i) => states[i] == "1");
+      const hidden = await getMany(redisPub, others.map((m) => `user:${m}:hideOnline`));
+      // Online, and not hiding it
+      const online = others.filter((_, i) => states[i] == "1" && hidden[i] != "1");
       socket.emit("chat:statusList", { conversationId, online });
     } catch (err) {
       console.info("chat:status error:", err);

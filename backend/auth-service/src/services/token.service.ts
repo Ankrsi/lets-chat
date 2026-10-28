@@ -70,9 +70,20 @@ export const createSession = async (user: IUser, device: DeviceInfo) => {
 };
 
 export const rotateRefreshToken = async (refreshToken: string) => {
-  const session = await Session.findOne({ refreshTokenHash: hashToken(refreshToken) });
-  if (!session || session.expiresAt.getTime() < Date.now())
+  const presented = hashToken(refreshToken);
+  const next = newRefreshToken();
+
+  // Swap in one step, so a refresh token can only ever be used once
+  const session = await Session.findOneAndUpdate(
+    { refreshTokenHash: presented, expiresAt: { $gt: new Date() } },
+    { $set: { refreshTokenHash: hashToken(next), previousTokenHash: presented, expiresAt: new Date(Date.now() + refreshTtlMs()) } },
+    { new: true },
+  );
+  if (!session) {
+    // An already-used token: someone else has a copy of it. End that session for both of them.
+    await Session.deleteOne({ previousTokenHash: presented });
     throw new ApiError("Invalid or expired refresh token", 401);
+  }
 
   const user = await User.findById(session.userId);
   if (!user) {
@@ -80,10 +91,6 @@ export const rotateRefreshToken = async (refreshToken: string) => {
     throw new ApiError("User no longer exists", 401);
   }
 
-  const next = newRefreshToken();
-  session.refreshTokenHash = hashToken(next);
-  session.expiresAt = new Date(Date.now() + refreshTtlMs());
-  await session.save();
   return { accessToken: signAccessToken(user, session._id), refreshToken: next };
 };
 

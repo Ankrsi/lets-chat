@@ -63,6 +63,10 @@ const start = async () => {
   await startSocketServer(app);
 };
 
+// A stray error is logged instead of taking every connection down
+process.on("unhandledRejection", (reason) => console.error("Unhandled rejection:", reason));
+process.on("uncaughtException", (err) => console.error("Uncaught exception:", err));
+
 start().catch((err) => {
   console.error("Startup failed:", err);
   process.exit(1);

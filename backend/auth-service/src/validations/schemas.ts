@@ -18,6 +18,11 @@ const username = () =>
 
 const name = () => Joi.string().trim().max(50);
 
+const pin = () => Joi.string().pattern(/^\d{6}$/).messages({ "string.pattern.base": "Code must be 6 digits" });
+
+export const setTwoStepSchema = Joi.object({ pin: pin().required(), currentPin: pin() });
+export const disableTwoStepSchema = Joi.object({ pin: pin().required() });
+
 export const generateOtpSchema = Joi.object({ phone: phone().required() });
 
 export const verifyOtpSchema = Joi.object({
@@ -29,6 +34,8 @@ export const verifyOtpSchema = Joi.object({
   device_type: Joi.string().valid("android", "ios", "web").default("android"),
   appName: Joi.string().max(50).default("SP_MAIN"),
   forceLogin: Joi.boolean().default(false),
+  pin: pin(),
+  forgotPin: Joi.boolean().default(false),
 });
 
 export const registerSchema = Joi.object({
@@ -46,6 +53,7 @@ export const updateProfileSchema = Joi.object({
   last_name: name().allow(""),
   about: Joi.string().trim().max(140).allow(""),
   email: Joi.string().trim().email().max(254).allow(null, ""),
+  photoVisibility: Joi.string().valid("everyone", "nobody"),
 }).min(1);
 
 export const changeUsernameSchema = Joi.object({ username: username().required() });

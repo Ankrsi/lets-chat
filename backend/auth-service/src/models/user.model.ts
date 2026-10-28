@@ -12,6 +12,13 @@ export interface IUser {
   profile_image?: string;
   role: string;
   blockedPhones: string[];
+  photoVisibility: "everyone" | "nobody"; // who can see profile_image
+  // Two-step verification code (hashed), and its wrong-try counter / lockout
+  twoStepEnabled: boolean;
+  twoStepPinHash?: string;
+  twoStepFailed?: number;
+  twoStepLockedUntil?: Date;
+  twoStepResetAt?: Date; // "forgot code": two-step turns off at this time, unless the code is used first
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,6 +35,12 @@ const userSchema = new Schema<IUser>(
     profile_image: { type: String },
     role: { type: String, default: "individual" },
     blockedPhones: { type: [String], default: [] },
+    photoVisibility: { type: String, enum: ["everyone", "nobody"], default: "everyone" },
+    twoStepEnabled: { type: Boolean, default: false },
+    twoStepPinHash: { type: String, select: false },
+    twoStepFailed: { type: Number, default: 0 },
+    twoStepLockedUntil: { type: Date },
+    twoStepResetAt: { type: Date },
   },
   { timestamps: true, collection: "users" },
 );
@@ -48,8 +61,14 @@ export const toSelf = (u: IUser) => ({
   email: u.email ?? null,
   profile_image: u.profile_image ?? null,
   isRegistered: !!u.username,
+  twoStepEnabled: !!u.twoStepEnabled,
+  photoVisibility: u.photoVisibility ?? "everyone",
   createdAt: u.createdAt,
 });
+
+// What other people see: no photo if the user hid it
+export const publicPhoto = (u: Pick<IUser, "profile_image" | "photoVisibility">) =>
+  u.photoVisibility === "nobody" ? null : u.profile_image ?? null;
 
 export const toPublic = (u: IUser) => ({
   _id: String(u._id),
@@ -59,5 +78,5 @@ export const toPublic = (u: IUser) => ({
   last_name: u.last_name,
   full_name: `${u.first_name} ${u.last_name}`.trim(),
   about: u.about,
-  profile_image: u.profile_image ?? null,
+  profile_image: publicPhoto(u),
 });

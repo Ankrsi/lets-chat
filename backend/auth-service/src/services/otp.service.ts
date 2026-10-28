@@ -1,12 +1,13 @@
 import crypto from "crypto";
 import axios from "axios";
-import { Otp } from "../models/otp.model";
+import { Otp, OtpDaily } from "../models/otp.model";
 import { ApiError } from "../utils/apiError";
 import { toE164 } from "../utils/phone";
 
 const OTP_TTL_MS = 10 * 60 * 1000; // the app tells users the code expires in 10 minutes
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
+const MAX_SENDS_PER_DAY = 10;
 
 const provider = () => (process.env.OTP_PROVIDER || "console").toLowerCase();
 
@@ -34,6 +35,11 @@ export const sendOtp = async (phone: string) => {
     const wait = Math.ceil((RESEND_COOLDOWN_MS - (now - existing.lastSentAt.getTime())) / 1000);
     throw new ApiError(`Please wait ${wait}s before requesting another code`, 429);
   }
+
+  // Daily limit per phone, counted atomically
+  const day = new Date(now).toISOString().slice(0, 10);
+  const today = await OtpDaily.findOneAndUpdate({ phone, day }, { $inc: { count: 1 } }, { upsert: true, new: true });
+  if (today.count > MAX_SENDS_PER_DAY) throw new ApiError("Too many codes requested today. Try again tomorrow.", 429);
 
   let codeHash: string | undefined;
   if (provider() === "twilio") {
@@ -66,16 +72,21 @@ export const checkOtp = async (phone: string, code: string) => {
   if (!record || record.expiresAt.getTime() < Date.now())
     throw new ApiError("OTP expired or not requested", 400);
 
-  // Already verified once (Twilio won't approve the same code twice): compare locally
+  // Count this try before checking, in one atomic step: many guesses sent at once
+  // can't all slip in under the limit
+  const counted = await Otp.findOneAndUpdate(
+    { _id: record._id, attempts: { $lt: MAX_ATTEMPTS } },
+    { $inc: { attempts: 1 } },
+  );
+  if (!counted) throw new ApiError("Too many wrong attempts, request a new code", 429);
+
+  // Already verified once (Twilio won't approve the same code twice): compare locally.
+  // A correct repeat (the two-step or "log in anyway" step) gives the try back.
   if (record.verifiedHash) {
     if (!safeEqualHex(record.verifiedHash, hashCode(phone, code))) throw new ApiError("Invalid OTP", 400);
+    await Otp.updateOne({ _id: record._id }, { $inc: { attempts: -1 } });
     return;
   }
-
-  if (record.attempts >= MAX_ATTEMPTS)
-    throw new ApiError("Too many wrong attempts, request a new code", 429);
-
-  await Otp.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
 
   let valid = false;
   if (provider() === "twilio") {

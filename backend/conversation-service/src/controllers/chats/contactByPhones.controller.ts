@@ -14,10 +14,16 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+const MAX_CONTACTS = 5000;
+
 export const setUsersByPhones = asyncHandler(async (req: Request, res: Response) => {
   const phonesWithNames: { phone: string; name: string }[] = req.body.phonesWithNames;
   if (!Array.isArray(phonesWithNames) || phonesWithNames.length === 0) {
     return new ApiResponse(400, [], "Phone numbers not found or invalid format");
+  }
+  // A phone's address book, not a scan of number ranges
+  if (phonesWithNames.length > MAX_CONTACTS) {
+    return new ApiResponse(400, [], `At most ${MAX_CONTACTS} contacts per upload`);
   }
 
   const currentUserPhone = req.user?.phone;
@@ -59,7 +65,6 @@ export const setUsersByPhones = asyncHandler(async (req: Request, res: Response)
       userId: user ? String(user._id) : null,
       full_name: user ? `${user.first_name} ${user.last_name}` : null,
       profile_image: user?.profile_image || null,
-      email: user?.email || null,
       isOnboarded: !!user,
     };
   });

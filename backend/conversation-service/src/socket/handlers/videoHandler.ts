@@ -37,6 +37,12 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
     if (n) await tx.exec();
   };
 
+  // Signals go only between two people in the same call right now
+  const inSameCall = async (a: any, b: any) => {
+    const [x, y] = await getMany(redisPublisher, [`user:${a}:inCall:callId`, `user:${b}:inCall:callId`]);
+    return !!x && x === y;
+  };
+
   socket.on("video:start-call", async ({ callId, from, to, conversationId, callType = "video", switchToVideo = false, timestamp = new Date() }) => {
     try {
       console.info("[calling] start call", callId, from, to, conversationId, callType);
@@ -174,7 +180,10 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
     try {
       const call = await readCall(callId);
       const participants: string[] = call.participants || [];
+      // Only a running call, in a chat this person belongs to
+      if (!participants.length || !(await getConversationMembers(call.conversationId)).map(String).includes(String(username))) return;
       await redisPublisher.set(`user:${username}:inCall`, "1", { EX: CALL_TTL });
+      await redisPublisher.set(`user:${username}:inCall:callId`, String(callId), { EX: CALL_TTL });
       if (!participants.includes(username)) {
         participants.push(username);
         await redisClient.set(`audioVideoActiveCall:${callId}`, JSON.stringify({ participants, conversationId: call.conversationId }));
@@ -186,14 +195,14 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
   });
 
   // WebRTC signalling: relay to the other side (ICE candidates are frequent, so no logging)
-  socket.on("video:offer", ({ from, to, offer }) => {
-    emitTo(io, [to], "video:offer", { from, to, offer }).catch(console.error);
+  socket.on("video:offer", async ({ from, to, offer }) => {
+    if (await inSameCall(from, to)) await emitTo(io, [to], "video:offer", { from, to, offer }).catch(console.error);
   });
-  socket.on("video:answer", ({ from, to, answer }) => {
-    emitTo(io, [to], "video:answer", { from, to, answer }).catch(console.error);
+  socket.on("video:answer", async ({ from, to, answer }) => {
+    if (await inSameCall(from, to)) await emitTo(io, [to], "video:answer", { from, to, answer }).catch(console.error);
   });
-  socket.on("video:ice-candidate", ({ from, to, candidate }) => {
-    emitTo(io, [to], "video:ice-candidate", { from, candidate }).catch(console.error);
+  socket.on("video:ice-candidate", async ({ from, to, candidate }) => {
+    if (await inSameCall(from, to)) await emitTo(io, [to], "video:ice-candidate", { from, candidate }).catch(console.error);
   });
 
   socket.on("video:remove-user", async ({ username, callId, conversationId, timestamp, status = "ended" }) => {
@@ -201,6 +210,8 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
       console.info("[calling] remove user", username, callId, status);
       const call = await readCall(callId);
       const participants: string[] = call.participants || [];
+      // Only someone in this call can end it or leave it
+      if (!participants.map(String).includes(String(username))) return;
 
       if (participants.length <= 2) {
         // 1:1 call: the whole call ends
@@ -236,8 +247,8 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
     }
   });
 
-  socket.on("video:call-type-changed", ({ from, to, callId, conversationId, type }) => {
-    emitTo(io, [to], "video:call-type-changed", { from, to, callId, conversationId, type }).catch(console.error);
+  socket.on("video:call-type-changed", async ({ from, to, callId, conversationId, type }) => {
+    if (await inSameCall(from, to)) await emitTo(io, [to], "video:call-type-changed", { from, to, callId, conversationId, type }).catch(console.error);
   });
 
   // Events every participant of the call gets

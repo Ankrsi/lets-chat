@@ -5,7 +5,7 @@ import { ApiResponse } from "../../utils/apiResponse";
 import { IReel, Reel } from "../../models/reelModal/reel.model";
 import { ReelLike } from "../../models/reelModal/reelLike.model";
 import { IReelComment, ReelComment } from "../../models/reelModal/reelComment.model";
-import { beforeCursor, canViewReels, getProfiles } from "../../utils/social";
+import { beforeCursor, getProfiles, hasBlocked } from "../../utils/social";
 
 const MAX_COMMENT = 500;
 const COMMENT_PAGE = 20;
@@ -13,7 +13,8 @@ const COMMENT_PAGE = 20;
 const viewableReel = async (id: string, me: string) => {
   if (!Types.ObjectId.isValid(id)) return null;
   const reel = await Reel.findById(id).select("author likeCount commentCount shareCount").lean<IReel>();
-  if (!reel || !(await canViewReels(me, reel.author))) return null;
+  // Like the suggested feed: any reel, unless its author blocked me
+  if (!reel || (reel.author !== me && (await hasBlocked(reel.author, me)))) return null;
   return reel;
 };
 

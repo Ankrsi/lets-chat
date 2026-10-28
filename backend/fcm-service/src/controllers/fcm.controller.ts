@@ -6,7 +6,6 @@ import { ApiResponse } from "../utils/apiResponse";
 
 export const sendNotification = asyncHandler(async (req: Request, res: Response) => {
   const { token, notification, data, device_type, android, apns } = req.body;
-  console.info('body', req.body)
   if (!token || !device_type || (!notification && !data)) {
     return res.status(400).json({ message: "Missing required fields." });
   }
@@ -44,7 +43,6 @@ export const sendNotification = asyncHandler(async (req: Request, res: Response)
         android,
         apns,
       });
-      console.info('fcm success', result)
       return new ApiResponse(200, {
         success: true,
         message: "Notification sent successfully.",
@@ -101,7 +99,6 @@ export const sendMultiNotification = asyncHandler(async (req: Request, res: Resp
         apns,
         webpush
       });
-      console.info('fcm success', result);
 
       return new ApiResponse(200, {
         success: true,

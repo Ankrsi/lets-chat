@@ -8,6 +8,7 @@ export interface ISession {
   phone: string;
   deviceId: string;
   refreshTokenHash: string;
+  previousTokenHash?: string; // the one before the last refresh: seeing it again means it was stolen
   fcmToken?: string;
   voipToken?: string;
   deviceType: string;
@@ -23,6 +24,7 @@ const sessionSchema = new Schema<ISession>(
     phone: { type: String, required: true, index: true },
     deviceId: { type: String, required: true },
     refreshTokenHash: { type: String, required: true, unique: true },
+    previousTokenHash: { type: String, index: true },
     fcmToken: { type: String },
     voipToken: { type: String },
     deviceType: { type: String, default: "android" },

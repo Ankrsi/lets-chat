@@ -202,6 +202,8 @@ export const groupVideoCallHandler = (socket: SocketWithTimeouts, redisPublisher
     try {
       const producerEntry = producers.get(producerId);
       if (!producerEntry) return cb({ error: "producer not found" });
+      // Only streams from the call this socket joined
+      if (producerEntry.conversationId !== socket.data.conversationId) return cb({ error: "producer not found" });
 
       const router = routers.get(producerEntry.conversationId);
       if (!router) return cb({ error: "router not found" });
