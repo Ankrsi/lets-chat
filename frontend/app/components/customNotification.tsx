@@ -1,7 +1,27 @@
-import notifee, { AndroidCategory, AndroidImportance, AndroidStyle, AndroidVisibility } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle, AndroidVisibility } from '@notifee/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
+import { getOpenRoomId } from '@/utils/globalRefs';
 import { messageNotificationsOn } from '@/utils/notificationSettings';
 
-// First photo's link, only if it isn't locked (encrypted content or locked photos give null)
+// Shows a pushed message as a notification. Runs with the app open, in the background and
+// closed (from index.js), so it only uses things that work without a screen.
+
+// What the notification says for each kind of message (messages are end-to-end encrypted,
+// so the push never has the text itself)
+const BODY: Record<string, string> = {
+    text: "New message",
+    image: "📷 Photo",
+    video: "🎥 Video",
+    voice: "🎤 Voice message",
+    audio: "🔊 Audio",
+    document: "📄 Document",
+    file: "📄 Document",
+    location: "📍 Location",
+    contact: "👤 Contact",
+};
+
+// First photo's link, only if it isn't locked (locked photos can't be shown before the app unlocks them)
 const imageUrl = (content: any): string | null => {
     try {
         const c = typeof content === 'string' ? JSON.parse(content) : content;
@@ -12,170 +32,68 @@ const imageUrl = (content: any): string | null => {
     }
 };
 
+// The sender's name from my contacts, else their number
+const senderName = async (phone: string) => {
+    const friends: any[] = JSON.parse((await AsyncStorage.getItem("contactsFriend")) || "[]");
+    const contact = friends.find((f) => String(f.phone) === String(phone));
+    return contact?.name || contact?.full_name || phone;
+};
+
 export default async function CustomNotification(data: any) {
     if (!data) return;
     // Turned off in Settings → Notifications
     if (!messageNotificationsOn()) return;
-    // Needed to route the tap to the right room (also after a cold start). Notifee only accepts string values.
-    const notifData: Record<string, string> = {};
-    Object.entries(data).forEach(([k, v]) => {
-        if (v != null) notifData[k] = typeof v === 'string' ? v : JSON.stringify(v);
-    });
+
     try {
-        if (data.messageType === "text") {
+        // The server's "missed call" push (the caller was busy or nobody answered)
+        if (data.type === "missed_call") {
             await notifee.displayNotification({
-                title: `New message from ${data?.senderId}` || "New Notification",
-                data: notifData,
-                // body: JSON.parse(data?.content)?.msg || "You have a new message",
-                body: "You have a new message",
+                title: `Missed call from ${await senderName(data.senderId)}`,
+                data: { type: "missed_call", senderId: String(data.senderId ?? "") },
                 android: {
                     channelId: 'messages',
-                    pressAction: { id: 'default', launchActivity: 'default' },
                     smallIcon: 'ic_launcher',
-                    importance: AndroidImportance.HIGH,
-                    visibility: AndroidVisibility.PUBLIC,
-                    category: AndroidCategory.CALL,
-                    // style: {
-                    //     type: AndroidStyle.MESSAGING,
-                    //     person: {
-                    //         name: data?.senderId || "Sender",
-                    //         icon: data?.senderAvatar || 'https://my-cdn.com/avatars/default.png',
-                    //     },
-                    //     messages: [
-                    //         {
-                    //             text: JSON.parse(data?.content)?.msg || "You have a new message",
-                    //             timestamp: Date.now() - 600000,
-                    //         },
-                    //     ]
-                    // },
-                    actions: [
-                        {
-                            title: 'Reply',
-                            pressAction: {
-                                id: 'reply',
-                                launchActivity: 'default'
-                            },
-                            icon: 'ic_reply'
-                        },
-                        {
-                            title: 'Mute',
-                            pressAction: {
-                                id: 'mute',
-                                launchActivity: 'default'
-                            },
-                            icon: 'ic_mute'
-                        },
-                    ],
-                    ongoing: true,
-                    autoCancel: false,
-                },
-                ios: {
-                    sound: 'default',
-                },
-            });
-        }
-        else if (data.messageType === "image") {
-            await notifee.displayNotification({
-                title: `New image from ${data?.senderId}` || "New Notification",
-                data: notifData,
-                body: "You have received a new image",
-                android: {
-                    channelId: 'messages',
                     pressAction: { id: 'default', launchActivity: 'default' },
-                    smallIcon: 'ic_launcher',
-                    importance: AndroidImportance.DEFAULT,
-                    // Locked photos can't be shown before the app unlocks them, so only older ones get a picture
-                    ...(imageUrl(data?.content) && {
-                        style: { type: AndroidStyle.BIGPICTURE, picture: imageUrl(data?.content)! },
-                    }),
                 },
-                ios: {
-                    sound: 'default',
-                },
+                ios: { sound: 'default' },
             });
+            return;
         }
-        else if (data.messageType === "video") {
-            await notifee.displayNotification({
-                title: `New video from ${data?.senderId}` || "New Notification",
-                data: notifData,
-                body: "🎥 You have received a new video",
-                android: {
-                    channelId: 'messages',
-                    pressAction: { id: 'default', launchActivity: 'default' },
-                    smallIcon: 'ic_launcher',
-                    importance: AndroidImportance.DEFAULT,
-                },
-                ios: {
-                    sound: 'default',
-                },
-            });
-        }
-        else if (data.messageType === "file") {
-            await notifee.displayNotification({
-                title: `New file from ${data?.senderId}` || "New Notification",
-                data: notifData,
-                body: "📎 You have received a new file",
-                android: {
-                    channelId: 'messages',
-                    pressAction: { id: 'default', launchActivity: 'default' },
-                    smallIcon: 'ic_launcher',
-                    importance: AndroidImportance.DEFAULT,
-                },
-                ios: {
-                    sound: 'default',
-                },
-            });
-        }
-        else if (data.messageType === "audio") {
-            await notifee.displayNotification({
-                title: `New audio message from ${data?.senderId}` || "New Notification",
-                data: notifData,
-                body: "🔊 You have received a new audio message",
-                android: {
-                    channelId: 'messages',
-                    pressAction: { id: 'default', launchActivity: 'default' },
-                    smallIcon: 'ic_launcher',
-                    importance: AndroidImportance.DEFAULT,
-                },
-                ios: {
-                    sound: 'default',
-                },
-            });
-        }
-        else if (data.messageType === "location") {
-            await notifee.displayNotification({
-                title: `New location from ${data?.senderId}` || "New Notification",
-                data: notifData,
-                body: "📍 You have received a new location",
-                android: {
-                    channelId: 'messages',
-                    pressAction: { id: 'default', launchActivity: 'default' },
-                    smallIcon: 'ic_launcher',
-                    importance: AndroidImportance.DEFAULT,
-                },
-                ios: {
-                    sound: 'default',
-                },
-            });
-        }
-        else if (data.messageType === "contact") {
-            await notifee.displayNotification({
-                title: `New contact from ${data?.senderId}` || "New Notification",
-                data: notifData,
-                body: "👤 You have received a new contact",
-                android: {
-                    channelId: 'messages',
-                    pressAction: { id: 'default', launchActivity: 'default' },
-                    smallIcon: 'ic_launcher',
-                    importance: AndroidImportance.DEFAULT,
-                },
-                ios: {
-                    sound: 'default',
-                },
-            });
-        }
+
+        const body = BODY[data.messageType];
+        if (!body) return; // not something we show
+
+        // Already reading this chat: no notification
+        if (AppState.currentState === "active" && data.conversationId && getOpenRoomId() === data.conversationId) return;
+
+        // Needed to route the tap to the right room (also after a cold start). Notifee only accepts string values.
+        const notifData: Record<string, string> = {};
+        Object.entries(data).forEach(([k, v]) => {
+            if (v != null) notifData[k] = typeof v === 'string' ? v : JSON.stringify(v);
+        });
+
+        const from = await senderName(data.senderId);
+        const isGroup = data.conv_type === "group" && data.name;
+        const picture = data.messageType === "image" ? imageUrl(data.content) : null;
+
+        await notifee.displayNotification({
+            // One notification per chat: a new message replaces the previous one instead of piling up
+            id: data.conversationId ? `msg_${data.conversationId}` : undefined,
+            title: isGroup ? data.name : from,
+            body: isGroup ? `${from}: ${body}` : body,
+            data: notifData,
+            android: {
+                channelId: 'messages',
+                smallIcon: 'ic_launcher',
+                importance: AndroidImportance.HIGH,
+                visibility: AndroidVisibility.PRIVATE, // lock screen shows "new message", not who wrote
+                pressAction: { id: 'default', launchActivity: 'default' },
+                actions: [{ title: 'Reply', pressAction: { id: 'reply', launchActivity: 'default' }, icon: 'ic_reply' }],
+                ...(picture && { style: { type: AndroidStyle.BIGPICTURE, picture } }),
+            },
+            ios: { sound: 'default' },
+        });
     } catch (error) {
         console.error('[CustomNotification] Error displaying notification:', error);
     }
-    return;
 }

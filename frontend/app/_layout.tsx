@@ -20,6 +20,9 @@ import { Stack, useNavigationContainerRef } from "expo-router";
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from "react";
 import { Dimensions, StyleSheet, View } from 'react-native';
+import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
+import OngoingCallBar from '@/app/components/OngoingCallBar';
+import { useActiveCall } from '@/utils/activeCall';
 import Animated, { Easing, FadeOut, useAnimatedStyle, useSharedValue, withDelay, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
 SplashScreen.preventAutoHideAsync();
@@ -141,6 +144,11 @@ export let currentScreen = "";
 function RootLayoutContent() {
   const navRef = useNavigationContainerRef();
   const [showSplash, setShowSplash] = useState(true);
+  const [screen, setScreen] = useState("");
+  const insets = useSafeAreaInsets();
+  // A call is going on and its screen isn't open: green "return to call" bar above every screen
+  const activeCall = useActiveCall();
+  const showCallBar = !!activeCall && screen !== "screens/callScreens/videoInCall";
 
   useEffect(() => {
     // The native splash stays until we hide it (preventAutoHideAsync above). Our AnimatedSplash
@@ -150,7 +158,10 @@ function RootLayoutContent() {
     initVideoCache();
     const unsubscribe = navRef.addListener("state", () => {
       const route = navRef.getCurrentRoute();
-      if (route) currentScreen = route.name;
+      if (route) {
+        currentScreen = route.name;
+        setScreen(route.name);
+      }
     });
 
     return unsubscribe;
@@ -169,6 +180,9 @@ function RootLayoutContent() {
             <AnimatedSplash onFinish={() => setShowSplash(false)} />
           )}
           <FriendContactProvider>
+            {showCallBar && <OngoingCallBar top={insets.top} />}
+            {/* The bar already covers the status bar: screens below it get no top inset */}
+            <SafeAreaInsetsContext.Provider value={showCallBar ? { ...insets, top: 0 } : insets}>
             <Stack ref={navRef}>
               <Stack.Screen name="index" options={{ title: "Home", headerShown: false }} />
               <Stack.Screen name="screens/login" options={{ title: "Login", headerShown: false }} />
@@ -199,6 +213,7 @@ function RootLayoutContent() {
               <Stack.Screen name="screens/twoStep" options={{ title: "Two-Step Verification", headerShown: false }} />
               <Stack.Screen name="screens/reels/followList" options={{ title: "Followers", headerShown: false }} />
             </Stack>
+            </SafeAreaInsetsContext.Provider>
           </FriendContactProvider>
           <AppLock />
         </SocketProvider>

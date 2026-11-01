@@ -1,7 +1,8 @@
-import { handleIncommingVideoCall, rejectVideoCall } from '@/contexts/videoCallController';
+import { handleIncommingVideoCall, leaveVideoCall, rejectVideoCall } from '@/contexts/videoCallController';
 import inCallManager from 'react-native-incall-manager';
 import notifee, { AndroidCategory, AndroidImportance, AndroidVisibility } from '@notifee/react-native';
-import { handleIncommingGroupVideoCall } from '@/contexts/groupVideoCallService';
+import { endVideoGroupCall, handleIncommingGroupVideoCall } from '@/contexts/groupVideoCallService';
+import { getActiveCall } from './activeCall';
 import { getGlobalSocket, getGlobalUsername } from './globalRefs';
 
 // Incoming calls always arrive as a push (FCM / APNs), in the foreground too:
@@ -73,13 +74,31 @@ export const handlePickCall = (data: any, socketParam: any, usernameParam: any) 
   }
 };
 
-export const handleDropCall = (data: any, socketParam: any) => {
-  const socket = socketParam || getGlobalSocket();
+// Closed or background app: the socket may still be connecting. Wait (up to 5 s) so "declined"
+// really goes out before Android stops the app again.
+const connectedSocket = async (socket: any) => {
+  for (let i = 0; i < 25 && !socket?.connected; i++) await new Promise((r) => setTimeout(r, 200));
+  return socket;
+};
+
+export const handleDropCall = async (data: any, socketParam: any) => {
   stopRinging(data?.callId);
   if (isOneToOne(data.type)) {
+    const socket = await connectedSocket(socketParam || getGlobalSocket());
     // The call ID comes from the push: after a cold start the app doesn't know it otherwise
-    rejectVideoCall(socket!, data?.to, data?.fromm, data?.callId);
+    rejectVideoCall(socket, data?.to, data?.fromm, data?.callId);
+    await new Promise((r) => setTimeout(r, 300)); // let it leave the phone
   }
+};
+
+// "Hang up" on the ongoing-call notification
+export const hangUpActiveCall = () => {
+  const call = getActiveCall();
+  if (!call) return;
+  const socket = getGlobalSocket();
+  const me = getGlobalUsername();
+  if (call.isGroup) endVideoGroupCall(socket!, me!);
+  else leaveVideoCall(socket!, me!);
 };
 
 export const showIncomingCall = async (data: any) => {

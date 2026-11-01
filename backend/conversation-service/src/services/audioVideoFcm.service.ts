@@ -79,7 +79,9 @@ export const sendAudioVideoFCMNotification = async (receiverId: string, message:
         app_code,
         role,
       },
-      android: { priority: "high", ttl: 0 }, // for 30 sec
+      // Kept for the ring time (30 s): a dozing or briefly offline phone still gets the call.
+      // (ttl 0 meant "now or never", so those phones never rang.)
+      android: { priority: "high", ttl: 30_000 },
       apns: {
         headers: { "apns-priority": "10", "apns-expiration":"0" }, // for 0 sec
         payload: {

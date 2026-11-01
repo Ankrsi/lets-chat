@@ -2,7 +2,8 @@ import notifee from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getInitialNotification as getInitialFcmNotification, getMessaging } from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
-import { handlePickCall } from './incomingCall';
+import { NOTIFICATION_ID as ONGOING_CALL, openCallScreen } from './activeCall';
+import { handlePickCall, hangUpActiveCall } from './incomingCall';
 import { getGlobalIsSocketConnected, getGlobalSocket, getGlobalUsername } from './globalRefs';
 import { initializeSocket } from './socket';
 
@@ -36,6 +37,12 @@ const waitForSocket = async (timeoutMs = 10000) => {
 };
 
 export const handleNotificationOpen = async ({ id, actionId, data }: NotificationOpen) => {
+  // Ongoing call: same notification every time, so it isn't "handled once" like the others
+  if (data?.type === ONGOING_CALL) {
+    if (actionId === 'hangup') hangUpActiveCall();
+    else openCallScreen();
+    return;
+  }
   if (id) {
     if (handledIds.has(id)) return;
     handledIds.add(id);

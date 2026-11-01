@@ -1,4 +1,5 @@
 import { currentScreen } from "@/app/_layout";
+import { clearActiveCall, markCallConnected, openCallScreen, startActiveCall } from "@/utils/activeCall";
 import { stopRinging } from "@/utils/incomingCall";
 import { getIceServers } from "@/utils/turn";
 import { updateConversationLastMessage } from "@/db/conversationRepo";
@@ -76,6 +77,7 @@ const endCallHere = () => {
     cameraOff = false;
     currentCallId = null;
     InCallManager.stop(); // back to normal phone audio (also unmutes the mic and releases the speaker)
+    clearActiveCall(); // removes the top bar and the ongoing-call notification
     CallEvents.emit("update-peers", peerConnection);
     if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
 };
@@ -298,7 +300,10 @@ export const createPeer = async (
         if (pc.connectionState === "closed") {
             cleanupPeer(to);
         }
-        if (pc.connectionState === "connected") watchQuality(to);
+        if (pc.connectionState === "connected") {
+            markCallConnected(); // starts the call timer (screen, top bar, notification)
+            watchQuality(to);
+        }
         CallEvents.emit("update-peers", peerConnection);
     };
 
@@ -557,10 +562,8 @@ export const startVideoCall = async (socket: Socket, from: string, to: string, c
     socket?.emit("chat:send-message", socketData);
     socket?.emit("video:start-call", { callId: tempCallId, from, to, conversationId, callType });
 
-    router.push({
-        pathname: "/screens/callScreens/videoInCall",
-        params: { from: from, to, conversationId, callType },
-    });
+    startActiveCall({ from, to: String(to), conversationId, callType }, false, callType === "video");
+    openCallScreen();
 };
 
 export const acceptVideoCall = async (socket: Socket, from: string, to: string, conversationId: string, callId?: string, offerType?: string, callType: "audio" | "video" = currentCallType) => {
@@ -582,10 +585,8 @@ export const acceptVideoCall = async (socket: Socket, from: string, to: string, 
         socket?.emit("video:accept-call", { callId: currentCallId, from: to, to: from });
     }
 
-    router.push({
-        pathname: "/screens/callScreens/videoInCall",
-        params: { from, to, conversationId, callType },
-    });
+    startActiveCall({ from, to, conversationId, callType }, false, callType === "video");
+    openCallScreen();
 };
 
 export const handleIncommingVideoCall = async ({ socket, callId, from, to, conversationId, callType }: any) => {

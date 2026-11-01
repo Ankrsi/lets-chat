@@ -6,7 +6,7 @@ import 'react-native-get-random-values';
 import inCallManager from 'react-native-incall-manager';
 import CustomNotification from './app/components/customNotification';
 import { handleGroupKeyPacket } from './utils/e2ee';
-import { handleDropCall, showIncomingCall } from './utils/incomingCall';
+import { handleDropCall, hangUpActiveCall, showIncomingCall } from './utils/incomingCall';
 import { getGlobalSocket, getGlobalUsername } from './utils/globalRefs';
 import { savePendingNotificationOpen } from './utils/notificationOpen';
 import { initializeSocket } from './utils/socket';
@@ -62,14 +62,15 @@ const handleRemoteMessage = async (remoteMessage) => {
   try {
     console.log('[FCM] Background message:', remoteMessage?.data?.type);
 
-    const { socket } = await ensureSocketInitialized();
     const data = remoteMessage?.data || {};
     if (data.type === 'audio_call' || data.type === 'video_call' || data.type === 'group_audio_call' || data.type === 'group_video_call') {
+      // Ring first; connecting the socket can take a while on a slow network
       try {
-        showIncomingCall(data);
+        await showIncomingCall(data);
       } catch (error) {
         console.error('[FCM] Error showing incoming call in background:', error);
       }
+      await ensureSocketInitialized(); // ready for Answer / Decline
     } else if (data.type === 'group_key_chat') {
       try {
         const msg = data;
@@ -117,11 +118,16 @@ const handleNotifeeEvent = async ({ type, detail }) => {
       await savePendingNotificationOpen({ id: notification?.id, actionId: pressAction?.id || 'default', data });
     }
 
+    // "Hang up" on the ongoing-call notification (the call runs in this same app process)
+    if (type === EventType.ACTION_PRESS && pressAction?.id === 'hangup') {
+      hangUpActiveCall();
+    }
+
     if (type === EventType.ACTION_PRESS && pressAction?.id === 'reject') {
       try {
         await notifee.cancelNotification(notification?.id || '');
         inCallManager.stopRingtone();
-        handleDropCall(data, socket);
+        await handleDropCall(data, socket); // waits until "declined" is really sent (closed app)
         console.log('[Notifee] Reject action handled');
       } catch (error) {
         console.error('[Notifee] Error handling reject action:', error);

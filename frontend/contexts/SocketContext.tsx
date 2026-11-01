@@ -93,7 +93,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const { notification, pressAction } = detail;
       await AsyncStorage.setItem('last_notification', JSON.stringify(notification || {}));
       const data = notification?.data;
-      if (type === EventType.PRESS || (type === EventType.ACTION_PRESS && pressAction?.id === 'reply')) {
+      if (type === EventType.PRESS || (type === EventType.ACTION_PRESS && (pressAction?.id === 'reply' || pressAction?.id === 'hangup'))) {
         await handleNotificationOpen({ id: notification?.id, actionId: pressAction?.id || 'default', data: data || {} });
       }
 

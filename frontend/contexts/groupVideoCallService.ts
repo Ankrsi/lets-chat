@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import * as mediasoupClient from "mediasoup-client";
 import { Alert, DeviceEventEmitter } from "react-native";
 import { getGlobalSocket, getGlobalUsername } from "@/utils/globalRefs";
+import { clearActiveCall, markCallConnected, openCallScreen, startActiveCall } from "@/utils/activeCall";
 import { stopRinging } from "@/utils/incomingCall";
 import InCallManager from "react-native-incall-manager";
 import notifee from '@notifee/react-native';
@@ -164,10 +165,8 @@ export const startGroupVideoCall = async (
 
   await joinRoom(socket, myId, conversationId);
 
-  router.push({
-    pathname: "/screens/callScreens/videoInCall",
-    params: { callId, from: myId, conversationId, callType: "groupCall" },
-  });
+  startActiveCall({ callId, from: myId, conversationId, callType: "groupCall" }, true, currentCallType === "video");
+  openCallScreen();
 };
 
 // JOIN ROOM  (shared by startGroupCall and acceptGroupCall)
@@ -223,15 +222,13 @@ export const acceptVideoGroupCall = async (
 
   await joinRoom(socket, myId, currentConversationId);
 
-  router.push({
-    pathname: "/screens/callScreens/videoInCall",
-    params: {
-      callId: currentGroupCallId,
-      from: myId,
-      conversationId: currentConversationId,
-      callType: "groupCall",
-    },
-  });
+  startActiveCall(
+    { callId: String(currentGroupCallId), from: myId, conversationId: currentConversationId, callType: "groupCall" },
+    true,
+    currentCallType === "video",
+  );
+  markCallConnected(); // joined the room: the call is on
+  openCallScreen();
 };
 
 // END CALL
@@ -285,6 +282,7 @@ export const switchCallType = async (socket: Socket, myId: string, callType: "au
 // INTERNAL: cleanup
 
 export const cleanupGroupCall = (): void => {
+  clearActiveCall(); // removes the top bar and the ongoing-call notification
   try {
     sendTransport?.close();
     sendTransport = null;
@@ -431,6 +429,7 @@ const consumeRemote = async (
   });
 
   consumer.resume();
+  markCallConnected(); // someone else is in the call: the timer starts (only the first time)
 
   consumersByProducer.set(producerId, { consumer, userId: producerUserId });
 

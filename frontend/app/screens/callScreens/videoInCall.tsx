@@ -23,12 +23,13 @@ import {
   toggleMute,
 } from "@/contexts/videoCallController";
 import { colors } from "@/theme";
+import { changeCallType, getActiveCall, updateCallControls, useActiveCall } from "@/utils/activeCall";
 import { getGlobalSocket, getGlobalUsername } from "@/utils/globalRefs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import ExpoPip from "expo-pip";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { Animated, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -140,11 +141,15 @@ export default function videoInCall() {
   const [remoteStreams, setRemoteStreams] = useState<any[]>([]);
   const [connected, setConnected] = useState(false);
   // Video calls start on the loudspeaker, audio calls on the earpiece (set by the call controllers)
-  const [isSpeakerOn, setIsSpeakerOn] = useState(callType !== "audio");
+  // Opened again after leaving it: buttons show how they were left, not their defaults
+  const saved = getActiveCall();
+  const call = useActiveCall();
+  const connectedAt = call?.connectedAt ?? null;
+  const [isSpeakerOn, setIsSpeakerOn] = useState(saved?.speaker ?? callType !== "audio");
   const { isInPipMode } = ExpoPip.useIsInPip();
   const pipSupported = ExpoPip.isInPipMode() !== undefined; // undefined: this build has no picture-in-picture
-  const [muted, setMuted] = useState(false);
-  const [cameraOff, setCameraOff] = useState(false); // my camera
+  const [muted, setMuted] = useState(saved?.muted ?? false);
+  const [cameraOff, setCameraOff] = useState(saved?.cameraOff ?? false); // my camera
   const [peerCameraOff, setPeerCameraOff] = useState(false); // the other person's camera (1:1)
   const [poorNetwork, setPoorNetwork] = useState(false); // video quality dropped to "low"
   const [contacts, setContacts] = useState<any[]>([]);
@@ -152,7 +157,6 @@ export default function videoInCall() {
   const [consumers, setConsumers] = useState<any[]>([]);
   const [speakingUsers, setSpeakingUsers] = useState<any[]>([]);
   const [mutedUsers, setMutedUsers] = useState<Record<string, boolean>>({});
-  const [connectedAt, setConnectedAt] = useState<number | null>(null);
 
   const isGroup = callType === "groupCall";
 
@@ -210,9 +214,14 @@ export default function videoInCall() {
   }, []);
 
   const live = isGroup ? consumers.length > 0 : connected;
+
+  // Remember the buttons, so they look the same when this screen is opened again
   useEffect(() => {
-    if (live && !connectedAt) setConnectedAt(Date.now());
-  }, [live]);
+    updateCallControls({ muted, cameraOff, speaker: isSpeakerOn });
+  }, [muted, cameraOff, isSpeakerOn]);
+  useEffect(() => {
+    changeCallType(activeCallType);
+  }, [activeCallType]);
 
   const status = live && connectedAt
     ? formatTime(Date.now() - connectedAt)
@@ -332,6 +341,14 @@ export default function videoInCall() {
             </View>
           )}
         </View>
+        {/* Leave the call screen, the call keeps going (a green bar and a notification bring it back) */}
+        <TouchableOpacity
+          style={[s.addBtn, s.leftBtn, { top: insets.top + 16 }]}
+          onPress={() => router.canGoBack() ? router.back() : router.replace("/screens/chat")}
+          accessibilityLabel="Minimize call"
+        >
+          <MaterialCommunityIcons name="chevron-down" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
         {pipSupported && !isAudio && (
           <TouchableOpacity
             style={[s.addBtn, s.pipBtn, { top: insets.top + 16 }]}
@@ -426,15 +443,16 @@ const s = StyleSheet.create({
   initialsText: { color: "#FFFFFF", fontWeight: "700" },
 
   top: { position: "absolute", top: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 30 },
-  // Side padding leaves room for the add-people button on the right
-  topText: { alignItems: "center", paddingHorizontal: 50 },
+  // Side padding leaves room for the buttons on both sides
+  topText: { alignItems: "center", paddingHorizontal: 104 },
   encRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 6 },
   encText: { color: "rgba(255,255,255,0.7)", fontSize: 12 },
   title: { color: "#FFFFFF", fontSize: 26, fontWeight: "700", textAlign: "center" },
   status: { color: "rgba(255,255,255,0.75)", fontSize: 15, marginTop: 4, textAlign: "center" },
   addBtn: { position: "absolute", right: 16, width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
 
-  pipBtn: { right: undefined, left: 16 },
+  leftBtn: { right: undefined, left: 16 },
+  pipBtn: { right: undefined, left: 68 },
   // Placed by DraggableSelfView (moved with translate from the top-left corner)
   // Rounded with styles. iOS rounds the video too; Android draws video on its own layer that
   // styles can't clip, so there the video itself stays square

@@ -1,3 +1,4 @@
+import notifee from "@notifee/react-native";
 import { ContactContext } from "@/contexts/FriendContactContext";
 import { getOpenRoomId, setOpenRoomId } from "@/utils/globalRefs";
 import { readReceiptsOn } from "@/utils/privacy";
@@ -400,6 +401,7 @@ export default function ChatScreen() {
   // Tells incoming-message handling which chat is open (for read receipts)
   useEffect(() => {
     setOpenRoomId(String(id));
+    notifee.cancelNotification(`msg_${id}`).catch(() => undefined); // this chat's notification: read now
     return () => {
       if (getOpenRoomId() === String(id)) setOpenRoomId(null);
     };
