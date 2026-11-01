@@ -547,37 +547,13 @@ export const styles = StyleSheet.create({
     chatLists: {
         flex: 1
     },
-    addUserInCall: {
-        position: "absolute",
-        top: 60,
-        right: 25,
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: "rgba(255,255,255,0.15)",
-        alignItems: "center",
-        justifyContent: "center",
-        borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.4)",
-    },
-    addUserPlus: {
-        color: "#fff",
-        fontSize: 32,
-        marginTop: -2
-    },
     contactItemBottomSheet: {
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 15,
         paddingVertical: 12,
         borderBottomWidth: 0.5,
-        borderColor: "#eee",
-    },
-    contactAvatarBottomSheet: {
-        width: 45,
-        height: 45,
-        borderRadius: 25,
-        marginRight: 12
+        borderColor: colors.border,
     },
     contactNameBottomSheet: {
         fontSize: 16,
@@ -586,68 +562,7 @@ export const styles = StyleSheet.create({
     },
     contactSubTextBottomSheet: {
         fontSize: 13,
-        color: "gray"
-    },
-
-    contactSelectedUserContainerBottomSheet: {
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: 5,
-        width: 70,
-    },
-
-    contactSelectedUserAvatarBottomSheet: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        marginBottom: 5,
-    },
-
-    contactSelectedUserNameBottomSheet: {
-        fontSize: 12,
-        color: colors.text,
-        textAlign: "center",
-        width: 60,
-    },
-
-    contactRemoveBtnBottomSheet: {
-        position: "absolute",
-        bottom: 20,
-        right: 5,
-        backgroundColor: "red",
-        width: 18,
-        height: 18,
-        borderRadius: 9,
-        alignItems: "center",
-        justifyContent: "center",
-    },
-
-    videoCallRemote: {
-        flex: 1
-    },
-
-    videoCallLocal: {
-        position: "absolute",
-        width: 120,
-        height: 160,
-        top: 70,
-        left: 20,
-        borderRadius: 15
-    },
-    videoCallEndBtn: {
-        position: "absolute",
-        bottom: 30,
-        alignSelf: "center",
-        backgroundColor: "#ff4040",
-        width: 50,
-        height: 50, borderRadius: 35,
-        alignItems: "center",
-        justifyContent: "center"
-    },
-    videoCallEndText: {
-        color: "#fff",
-        fontSize: 18
+        color: colors.textSecondary
     },
     createGroupBody: {
         marginHorizontal: 15

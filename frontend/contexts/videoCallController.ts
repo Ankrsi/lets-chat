@@ -33,12 +33,13 @@ export interface PeerData {
     isOfferer?: boolean;   // the side that sent the offer also sends the ICE-restart offer
     restartTimer?: ReturnType<typeof setTimeout>;
     giveUpTimer?: ReturnType<typeof setTimeout>;
+    qualityTimer?: ReturnType<typeof setInterval>;
+    quality?: Quality;
 }
 
 // Weak networks: modest camera size + bitrate cap. Frame rate is automatic: capture up to 30 fps and
 // WebRTC lowers it (and the resolution) when the network is poor, raising it again when it improves.
 const VIDEO_CONSTRAINTS = { facingMode: "user", width: 640, height: 360, frameRate: { ideal: 30, max: 30 } };
-const MAX_VIDEO_BITRATE = 500_000;   // bps
 const RESTART_AFTER_MS = 3000;
 const GIVE_UP_AFTER_MS = 20000;
 
@@ -55,22 +56,38 @@ const pcConfig: RTCConfiguration = {
     iceCandidatePoolSize: 10,
 };
 
+const closePeer = (peer: PeerData) => {
+    clearTimeout(peer.restartTimer);
+    clearTimeout(peer.giveUpTimer);
+    clearInterval(peer.qualityTimer);
+    try { peer.pc?.close(); } catch { }
+};
+
+// Ends the call on this phone, however it ended (hang up, declined, missed, busy, dropped):
+// closes the connections, turns off camera and mic, gives the phone's audio back (no more call
+// mode, speaker or mic icon) and closes the call screen once.
+const endCallHere = () => {
+    const peers = Object.values(peerConnection);
+    peerConnection = {}; // first, so the "closed" events below find nothing left to clean
+    peers.forEach(closePeer);
+    localStream?.getTracks().forEach(t => t.stop());
+    localStream = null;
+    micMuted = false;
+    cameraOff = false;
+    currentCallId = null;
+    InCallManager.stop(); // back to normal phone audio (also unmutes the mic and releases the speaker)
+    CallEvents.emit("update-peers", peerConnection);
+    if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
+};
+
+// One person left (or their connection dropped). The last one leaving ends the call.
 export const cleanupPeer = (remoteId: string) => {
     const peer = peerConnection[remoteId];
     if (!peer) return;
-
-    clearTimeout(peer.restartTimer);
-    clearTimeout(peer.giveUpTimer);
-    try { peer.pc?.close(); } catch { }
     delete peerConnection[remoteId];
+    closePeer(peer);
     CallEvents.emit("update-peers", peerConnection);
-
-    if (Object.keys(peerConnection).length === 0) {
-        localStream?.getTracks().forEach(t => t.stop());
-        localStream = null;
-        InCallManager.stop();
-        router.dismiss();
-    }
+    if (Object.keys(peerConnection).length === 0) endCallHere();
 };
 
 const ensureVideoTrack = async () => {
@@ -91,16 +108,78 @@ const ensureVideoTrack = async () => {
     return videoTrack;
 };
 
-const capVideoBitrate = async (sender: any) => {
+// Video quality levels, picked from the connection (see watchQuality). WebRTC also adapts by itself
+// within each level; the levels keep weak networks from freezing and let good ones look sharper.
+const QUALITY = {
+    high: { maxBitrate: 900_000, scaleResolutionDownBy: 1, maxFramerate: 30 },     // full 640x360
+    medium: { maxBitrate: 450_000, scaleResolutionDownBy: 1.5, maxFramerate: 24 },
+    low: { maxBitrate: 150_000, scaleResolutionDownBy: 3, maxFramerate: 15 },
+};
+export type Quality = keyof typeof QUALITY;
+
+const applyQuality = async (sender: any, level: Quality) => {
     try {
         const params = sender?.getParameters?.();
         if (!params?.encodings?.length) return;
-        params.encodings.forEach((e: any) => { e.maxBitrate = MAX_VIDEO_BITRATE; });
+        params.encodings.forEach((e: any) => Object.assign(e, QUALITY[level]));
         params.degradationPreference = "balanced";   // adapt frame rate and resolution together
         await sender.setParameters(params);
     } catch (e) {
-        console.warn("Could not cap video bitrate", e);
+        console.warn("Could not set video quality", e);
     }
+};
+
+// Start in the middle; watchQuality moves up or down once the call is connected
+const capVideoBitrate = (sender: any) => applyQuality(sender, "medium");
+
+// Every few seconds: how fast can we send, how much is lost, how long is the round trip.
+// A level only changes after two checks in a row agree, so the picture doesn't flicker.
+const QUALITY_CHECK_MS = 3000;
+const pickQuality = (kbps: number, loss: number, rttSec: number): Quality =>
+    kbps >= 800 && loss < 0.03 && rttSec < 0.3 ? "high"
+        : kbps >= 300 && loss < 0.1 && rttSec < 0.6 ? "medium"
+            : "low";
+
+const watchQuality = (remoteId: string) => {
+    const peer = peerConnection[remoteId];
+    if (!peer || peer.qualityTimer) return;
+    let pending: Quality | null = null;
+    peer.qualityTimer = setInterval(async () => {
+        const current = peerConnection[remoteId];
+        if (!current?.pc || current !== peer) return;
+        try {
+            let kbps = 0, loss = 0, rtt = 0;
+            const report: any = await current.pc.getStats();
+            report.forEach((r: any) => {
+                if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {
+                    kbps = (r.availableOutgoingBitrate ?? 0) / 1000;
+                    rtt = r.currentRoundTripTime ?? 0;
+                }
+                if (r.type === "remote-inbound-rtp" && r.kind === "video") loss = r.fractionLost ?? 0;
+            });
+            if (!kbps) return; // no estimate yet
+            const level = pickQuality(kbps, loss, rtt);
+            if (level === current.quality) { pending = null; return; }
+            if (pending !== level) { pending = level; return; } // wait for a second check
+            pending = null;
+            current.quality = level;
+            await applyQuality(current.videoSender, level);
+            CallEvents.emit("network-quality", level);
+        } catch (e) {
+            console.info("quality check failed", e);
+        }
+    }, QUALITY_CHECK_MS);
+};
+
+// Answering an audio call: our own empty video slot isn't part of the caller's offer, so a camera put
+// into it later is never sent. Use the offer's video slot instead (set to send too), so switching the
+// call to video works without a new offer. In video calls this is already the same slot.
+const useOfferedVideoSlot = (peer: PeerData) => {
+    const slot = peer.pc?.getTransceivers().find((t: any) => t.mid != null && t.receiver?.track?.kind === "video");
+    if (!slot || slot.sender === peer.videoSender) return;
+    if (!slot.sender.track) slot.direction = "sendrecv";
+    peer.videoSender = slot.sender;
+    capVideoBitrate(slot.sender);
 };
 
 // This person's connection is already set up (or being set up from their side)
@@ -161,7 +240,7 @@ export const createPeer = async (
 
     try {
         InCallManager.start({ media: callType, auto: true });
-        InCallManager.setSpeakerphoneOn(true);
+        InCallManager.setForceSpeakerphoneOn(callType === "video"); // video: loudspeaker, audio: earpiece
     } catch (e) {
         console.warn('InCallManager start failed in createPeerConnection', e);
     }
@@ -205,13 +284,11 @@ export const createPeer = async (
     (pc as any).ontrack = (event: any) => {
         const peer = peerConnection[to];
         if (!peer) return;
-        // A track can arrive without a stream (e.g. the other side's audio-only call): collect it ourselves
-        let remoteStream = event.streams?.[0];
-        if (!remoteStream) {
-            remoteStream = peer.remoteStream ?? new MediaStream();
-            remoteStream.addTrack(event.track);
-        }
-        peer.remoteStream = remoteStream;
+        // Our own stream with every track received so far. A track can arrive without a stream (the video
+        // slot of an audio call), and tracks added to the received stream don't reach the video view on
+        // Android, so the screen stayed black. A new stream also makes the view redraw (new id).
+        const others = (peer.remoteStream?.getTracks() ?? []).filter((t: any) => t.id !== event.track.id);
+        peer.remoteStream = new MediaStream([...others, event.track]);
         CallEvents.emit("update-peers", { ...peerConnection });
     };
 
@@ -221,6 +298,7 @@ export const createPeer = async (
         if (pc.connectionState === "closed") {
             cleanupPeer(to);
         }
+        if (pc.connectionState === "connected") watchQuality(to);
         CallEvents.emit("update-peers", peerConnection);
     };
 
@@ -272,6 +350,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         "video:call-type-changed",
         "video:call-rejected",
         "video:InCall",
+        "video:cameraState",
     ];
     VIDEO_CALL_SOCKET_EVENTS.forEach((sock) => {
         socket?.off(sock);
@@ -298,9 +377,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
 
     socket?.on("video:missed-call", async ({ callId }) => {
         stopRinging(callId);
-        if (currentScreen === "screens/callScreens/videoInCall") {
-            router.dismiss();
-        }
+        if (callId === currentCallId) endCallHere(); // our outgoing call wasn't answered
     });
 
     socket?.on("video:user-joined", async ({ username }) => {
@@ -322,6 +399,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
         const peer = peerConnection[from];
+        if (peer) useOfferedVideoSlot(peer);
         if (peer && peer.pendingCandidates.length > 0) {
             for (const candidate of peer.pendingCandidates) {
                 try {
@@ -368,28 +446,21 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
     socket?.on("video:clear-call", ({ from, username, callId }) => {
         stopRinging(callId); // the caller hung up while it was still ringing here
         if (from == username) {
-            socket?.emit("video:end-call", { callId: currentCallId, from, conversationId: currentConversationId, timestamp: Date.now() });
+            socket?.emit("video:end-call", { callId: callId || currentCallId, from, conversationId: currentConversationId, timestamp: Date.now() });
         }
-        currentCallId = null;
-        Object.keys(peerConnection).forEach((username: string) => cleanupPeer(username));
-        if (currentScreen === "screens/callScreens/videoInCall" && Object.keys(peerConnection).length == 1) {
-            if (router.canGoBack()) {
-                router.dismiss();
-            }
-        }
+        endCallHere();
     });
 
-    socket?.on("video:call-rejected", () => {
-        if (currentScreen === "screens/callScreens/videoInCall") {
-            router.dismiss();
-        }
-    });
+    socket?.on("video:call-rejected", () => endCallHere());
 
     // The person we called is already on another call
+    // Someone in the call turned their camera off/on (we get our own too: ignored)
+    socket?.on("video:cameraState", ({ username, off }) => {
+        if (String(username) !== String(myId)) CallEvents.emit("camera-state", { username: String(username), off: !!off });
+    });
+
     socket?.on("video:InCall", () => {
-        Object.keys(peerConnection).forEach((u: string) => cleanupPeer(u));
-        peerConnection = {};
-        if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
+        endCallHere();
         Alert.alert("User is busy", "They're on another call. Try again later.");
     });
 
@@ -399,33 +470,26 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         if (type === "video") {
             const videoTrack = await ensureVideoTrack();
             if (videoTrack) await peerConnection[from]?.videoSender?.replaceTrack(videoTrack);
-            InCallManager.setSpeakerphoneOn(true);
+            InCallManager.setForceSpeakerphoneOn(true);
         } else {
             await peerConnection[from]?.videoSender?.replaceTrack(null);
             localStream?.getVideoTracks().forEach(t => t.stop());
-            InCallManager.setSpeakerphoneOn(false);
+            InCallManager.setForceSpeakerphoneOn(false);
         }
 
         CallEvents.emit("call-type-changed", type);
     });
 };
 
-export const leaveVideoCall = (socket: Socket, myId: string, conversationIdTemp: string) => {
-    Object.keys(peerConnection).forEach((username: string) => cleanupPeer(username));
+// End button
+export const leaveVideoCall = (socket: Socket, myId: string) => {
     socket?.emit("video:remove-user", { callId: currentCallId, username: myId, conversationId: currentConversationId });
-    currentCallId = conversationIdTemp;
-    peerConnection = {};
-    if (currentScreen === "screens/callScreens/videoInCall") {
-        router.dismiss();
-    }
+    endCallHere();
 };
 
+// Decline from the ringing notification: we never joined, so there's nothing here to end
 export const rejectVideoCall = (socket: Socket, myId: string, to: string, callId?: string) => {
     socket?.emit("video:reject-call", { callId: callId || currentCallId, from: myId, to });
-    currentCallId = null;
-    peerConnection = {};
-    // Declined from the notification: often there is no screen to close (or no navigator yet)
-    if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
 };
 
 export const addUserVideoCall = (socket: Socket, myId: string, to: any[], callType: string) => {
@@ -454,7 +518,7 @@ export const startVideoCall = async (socket: Socket, from: string, to: string, c
 
     try {
         InCallManager.start({ media: callType, auto: true });
-        InCallManager.setSpeakerphoneOn(true);
+        InCallManager.setForceSpeakerphoneOn(callType === "video");
     } catch (e) {
         console.warn('InCallManager start failed before startCall', e);
     }
@@ -506,7 +570,7 @@ export const acceptVideoCall = async (socket: Socket, from: string, to: string, 
     currentCallType = callType;
     try {
         InCallManager.start({ media: callType, auto: true });
-        InCallManager.setSpeakerphoneOn(true);
+        InCallManager.setForceSpeakerphoneOn(callType === "video");
     } catch (e) {
         console.warn('InCallManager start failed before startCall', e);
     }
@@ -531,6 +595,26 @@ export const handleIncommingVideoCall = async ({ socket, callId, from, to, conve
     await acceptVideoCall(socket, from, to, conversationId, callId, undefined, callType ?? currentCallType);
 };
 
+// Mute button (1:1). Returns true when now muted, like the group version.
+// Camera off/on during a video call: the call stays a video call, only my picture stops.
+// The other side is told so it shows my avatar instead of black video. Returns true when now off.
+let cameraOff = false;
+export const toggleCamera = (socket: Socket, myId: string): boolean => {
+    cameraOff = !cameraOff;
+    localStream?.getVideoTracks().forEach((t) => { t.enabled = !cameraOff; });
+    socket?.emit("video:cameraState", { callId: currentCallId, username: myId, off: cameraOff });
+    return cameraOff;
+};
+
+// Mutes both the call's mic track and the phone's microphone, so it works even if the track changes.
+let micMuted = false;
+export const toggleMute = (): boolean => {
+    micMuted = !micMuted;
+    localStream?.getAudioTracks().forEach((t) => { t.enabled = !micMuted; });
+    InCallManager.setMicrophoneMute(micMuted);
+    return micMuted;
+};
+
 export const switchCallType = async (socket: Socket, myId: string, newCallType: "audio" | "video") => {
     console.log(currentCallType, newCallType);
     currentCallType = newCallType;
@@ -549,7 +633,7 @@ export const switchCallType = async (socket: Socket, myId: string, newCallType: 
         localStream?.getVideoTracks().forEach(t => t.stop());
     }
 
-    InCallManager.setSpeakerphoneOn(newCallType === "video");
+    InCallManager.setForceSpeakerphoneOn(newCallType === "video");
 
     Object.keys(peerConnection).forEach((to) => {
         socket?.emit("video:call-type-changed", {

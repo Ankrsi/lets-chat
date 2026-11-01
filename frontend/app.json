@@ -125,7 +125,8 @@
         {
           "faceIDPermission": "Allow $(PRODUCT_NAME) to use Face ID to unlock the app."
         }
-      ]
+      ],
+      ["expo-pip", { "icons": [] }]
     ],
     "experiments": {
       "typedRoutes": true,

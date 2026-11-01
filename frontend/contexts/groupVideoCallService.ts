@@ -202,9 +202,9 @@ export const joinRoom = async (
   }
 
   try {
-    InCallManager.start({ media: "video", auto: true });
-    InCallManager.setSpeakerphoneOn(true);
-    speakerState = true;
+    InCallManager.start({ media: currentCallType, auto: true });
+    InCallManager.setForceSpeakerphoneOn(currentCallType === "video");
+    speakerState = currentCallType === "video";
   } catch (e) {
     console.warn("InCallManager start failed", e);
   }
@@ -304,7 +304,8 @@ export const cleanupGroupCall = (): void => {
   } catch (_) { }
 
   try {
-    InCallManager.setSpeakerphoneOn(false);
+    // Back to normal phone audio (also unmutes the mic and releases the speaker)
+    InCallManager.stop();
     speakerState = false;
   } catch (_) { }
 
@@ -463,6 +464,14 @@ const consumeRemote = async (
   console.log("🔊 Consuming video/audio from:", producerUserId);
 };
 
+// Camera off/on in a group video call (the call stays a video call). Returns true when now off.
+export const videoToggleCamera = (): boolean => {
+  const videoTrack = (groupVideoLocalStream as any)?.getVideoTracks()[0];
+  if (!videoTrack) return false;
+  videoTrack.enabled = !videoTrack.enabled;
+  return !videoTrack.enabled;
+};
+
 // TOGGLE MUTE  (mutes/unmutes local mic track)
 
 export const videoToggleAudio = (): boolean => {
@@ -471,18 +480,8 @@ export const videoToggleAudio = (): boolean => {
   if (!audioTrack) return false;
   audioTrack.enabled = !audioTrack.enabled;
   const muted = !audioTrack.enabled;
+  InCallManager.setMicrophoneMute(muted); // the phone's mic too, like 1:1 calls
   // Let the others in the call show the mute icon
   getGlobalSocket()?.emit("video:userMuteState", { conversationId: currentConversationId, userId: getGlobalUsername(), muted });
   return muted; // true if now muted
 };
-
-// TOGGLE CAMERA  (enables/disables local video track)
-export const videoToggleCamera = (): boolean => {
-  if (!groupVideoLocalStream) return false;
-  const videoTrack = (groupVideoLocalStream as any).getVideoTracks()[0];
-  if (!videoTrack) return false;
-  videoTrack.enabled = !videoTrack.enabled;
-  console.log("Camera toggled, enabled:", videoTrack.enabled);
-  return !videoTrack.enabled; // true = camera OFF
-};
-

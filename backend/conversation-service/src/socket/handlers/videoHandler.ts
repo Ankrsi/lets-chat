@@ -253,12 +253,14 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
     if (await inSameCall(from, to)) await emitTo(io, [to], "video:call-type-changed", { from, to, callId, conversationId, type }).catch(console.error);
   });
 
-  // Events every participant of the call gets
+  // Events every participant of the call gets (only from someone in that call)
   const toParticipants = (event: string, build: (args: any) => any) =>
     socket.on(event, async (args) => {
       try {
         const call = await readCall(args.callId);
-        await emitTo(io, call.participants || [], event, build(args));
+        const participants: string[] = (call.participants || []).map(String);
+        if (!participants.includes(String(args.username ?? args.from))) return;
+        await emitTo(io, participants, event, build(args));
       } catch (err) {
         console.error(`[calling] ${event} failed`, err);
       }
@@ -267,4 +269,6 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
   toParticipants("video:is-call-started", ({ callId, from, status = "ringing" }) => ({ from, callId, status }));
   toParticipants("video:mutedCall", ({ callId, username, mute = false }) => ({ username, callId, mute }));
   toParticipants("video:holdCall", ({ callId, username, hold = false }) => ({ username, callId, hold }));
+  // Camera turned off/on in a video call: the others show the person's picture instead of black video
+  toParticipants("video:cameraState", ({ callId, username, off = false }) => ({ username, callId, off: !!off }));
 };

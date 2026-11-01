@@ -31,6 +31,8 @@ const SENDER_FIELD: Record<string, string> = {
   "video:call-type-changed": "from",
   "video:mutedCall": "username",
   "video:holdCall": "username",
+  "video:cameraState": "username",
+  "video:is-call-started": "from",
   "group:video-start-call": "from",
   "video:joinRoom": "userId",
   "video:leaveRoom": "userId",
