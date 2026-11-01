@@ -39,10 +39,18 @@ export const stopRinging = async (callId?: string | null) => {
   }
 };
 
+// Answer can reach us twice (the notification button, then again when the app comes to the front).
+// Answering twice makes both phones start the connection at once, so each call is answered once.
+const answered = new Set<string>();
+
 export const handlePickCall = (data: any, socketParam: any, usernameParam: any) => {
   const socket = socketParam || getGlobalSocket();
   const username = usernameParam || getGlobalUsername();
   stopRinging(data?.callId);
+  if (data?.callId) {
+    if (answered.has(data.callId)) return;
+    answered.add(data.callId);
+  }
   if (isOneToOne(data.type)) {
     handleIncommingVideoCall({
       socket,

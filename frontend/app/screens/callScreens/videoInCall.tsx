@@ -34,6 +34,7 @@ export default function videoInCall() {
   const { conversationId, callType, to } = useLocalSearchParams();
   const [openContact, setOpenContact] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState<any[]>([]);
+  const [connected, setConnected] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [contacts, setContacts] = useState<any[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<any[]>([]);
@@ -87,10 +88,10 @@ export default function videoInCall() {
     }
     else {
       interval = setInterval(() => {
-        const streams = Object.values(peerConnection)
-          .map((peer: any) => peer.remoteStream)
-          .filter(Boolean);
-        setRemoteStreams(streams);
+        const peers = Object.values(peerConnection);
+        setRemoteStreams(peers.map((peer: any) => peer.remoteStream).filter(Boolean));
+        // Truly connected (media flowing), not just "the other side's offer/answer arrived"
+        setConnected(peers.some((peer: any) => peer.pc?.connectionState === "connected"));
       }, 400);
     }
 
@@ -210,7 +211,9 @@ export default function videoInCall() {
           />
           <Text style={{ color: "#fff", fontSize: 18, fontWeight: "600" }}>{to}</Text>
           <Text style={{ color: "#aaa", fontSize: 14, marginTop: 6 }}>
-            {(isGroup ? consumers.length > 0 : remoteStreams.length > 0) ? "Connected" : "Calling..."}
+            {isGroup
+              ? (consumers.length > 0 ? "Connected" : "Calling...")
+              : connected ? "Connected" : remoteStreams.length > 0 ? "Connecting..." : "Calling..."}
           </Text>
         </View>
       )}

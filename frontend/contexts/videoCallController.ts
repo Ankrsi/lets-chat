@@ -103,6 +103,9 @@ const capVideoBitrate = async (sender: any) => {
     }
 };
 
+// This person's connection is already set up (or being set up from their side)
+const alreadyConnected = (remoteId: string) => !!peerConnection[remoteId]?.pc?.remoteDescription;
+
 // ICE restart = a new offer on the existing connection (the other side answers as usual).
 const restartIceFor = async (socket: Socket, myId: string, to: string) => {
     const peer = peerConnection[to];
@@ -200,9 +203,15 @@ export const createPeer = async (
     };
 
     (pc as any).ontrack = (event: any) => {
-        const remoteStream = event.streams?.[0];
-        if (!remoteStream) return;
-        peerConnection[to].remoteStream = remoteStream;
+        const peer = peerConnection[to];
+        if (!peer) return;
+        // A track can arrive without a stream (e.g. the other side's audio-only call): collect it ourselves
+        let remoteStream = event.streams?.[0];
+        if (!remoteStream) {
+            remoteStream = peer.remoteStream ?? new MediaStream();
+            remoteStream.addTrack(event.track);
+        }
+        peer.remoteStream = remoteStream;
         CallEvents.emit("update-peers", { ...peerConnection });
     };
 
@@ -261,6 +270,8 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         "video:clear-call",
         "video:end-call",
         "video:call-type-changed",
+        "video:call-rejected",
+        "video:InCall",
     ];
     VIDEO_CALL_SOCKET_EVENTS.forEach((sock) => {
         socket?.off(sock);
@@ -269,6 +280,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
     socket?.on("video:call-started", async ({ callId, from, callType }) => {
         currentCallId = callId;
         currentCallType = callType ?? "video";
+        if (alreadyConnected(from)) return; // a repeated "accepted": the call is already set up
         const pc = await createPeer(socket, myId, from, currentCallType);
         peerConnection[from].isOfferer = true;
         const offer = await pc.createOffer();
@@ -284,7 +296,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         // show in-call UI
     });
 
-    socket?.on("video:missed-call", async ({ from, callId }) => {
+    socket?.on("video:missed-call", async ({ callId }) => {
         stopRinging(callId);
         if (currentScreen === "screens/callScreens/videoInCall") {
             router.dismiss();
@@ -292,6 +304,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
     });
 
     socket?.on("video:user-joined", async ({ username }) => {
+        if (alreadyConnected(username)) return;
         const pc = await createPeer(socket, myId, username, currentCallType);
         peerConnection[username].isOfferer = true;
         const offer = await pc.createOffer();
@@ -302,6 +315,10 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
 
     socket?.on("video:offer", async ({ from, offer }) => {
         const pc = await createPeer(socket, myId, from, currentCallType);
+        // Both sides sent an offer at the same moment ("glare"). Only one may win, decided the same
+        // way on both phones: the larger number keeps its offer; the smaller one drops its own
+        // (setRemoteDescription does that by itself) and answers.
+        if (pc.signalingState === "have-local-offer" && String(myId) > String(from)) return;
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
         const peer = peerConnection[from];
@@ -324,6 +341,8 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
     socket?.on("video:answer", async ({ from, answer }) => {
         const ent = peerConnection[from];
         if (!ent || !ent.pc) return;
+        // An answer only fits while our offer is waiting; a late one (after glare) is ignored
+        if (ent.pc.signalingState !== "have-local-offer") return;
 
         await ent.pc.setRemoteDescription(new RTCSessionDescription(answer as any));
         ent.pendingCandidates.forEach(c =>
@@ -360,7 +379,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         }
     });
 
-    socket?.on("video:call-rejected", ({ callId, from }) => {
+    socket?.on("video:call-rejected", () => {
         if (currentScreen === "screens/callScreens/videoInCall") {
             router.dismiss();
         }

@@ -114,7 +114,9 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
     }
   });
 
+  // from = the person answering, to = the caller (who then starts the connection)
   socket.on("video:accept-call", async ({ callId, conversationId = null, from, to, timestamp = new Date() }) => {
+    if (!to || String(from) === String(to)) return;
     try {
       console.info("[calling] call accepted", callId, from, to);
       await Promise.all([

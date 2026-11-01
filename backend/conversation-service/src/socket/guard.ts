@@ -19,7 +19,7 @@ const SENDER_FIELD: Record<string, string> = {
   "chat:msgReaction": "from",
   "chat:screenshot": "myPhone",
   "video:start-call": "from",
-  "video:accept-call": "to",
+  "video:accept-call": "from",
   "video:reject-call": "from",
   "video:end-call": "from",
   "video:add-user": "from",

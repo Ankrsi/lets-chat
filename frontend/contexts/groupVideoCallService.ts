@@ -59,7 +59,9 @@ export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): vo
     "video:producerClosed",
     "video:activeSpeakers",
     "video:userMuteState",
-    "video:call-type-switched"
+    "video:call-type-switched",
+    "group:video-InCall",
+    "video:callCanceled",
   ];
   GROUP_VIDEO_CALL_SOCKET_EVENTS.forEach((sock) => {
     socket?.off(sock);
