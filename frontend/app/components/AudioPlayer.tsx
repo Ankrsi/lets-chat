@@ -1,4 +1,5 @@
 import { colors } from "@/theme";
+import { useMediaFiles } from "@/utils/mediaCrypto";
 import { Ionicons } from "@expo/vector-icons";
 import { AudioPlayer as ExpoAudioPlayer, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import React, { useEffect, useMemo, useState } from "react";
@@ -22,6 +23,7 @@ const readContent = (raw: any) => {
   const first = Array.isArray(c?.urls) ? c.urls[0] : null;
   return {
     url: c?.url || first?.url || first || null,
+    key: c?.key || first?.key || undefined,
     name: c?.name || first?.name || null,
     duration: Number(c?.duration) || 0,
   };
@@ -31,8 +33,10 @@ const AudioPlayer = ({ data, onLongPress }: any) => {
   const content = useMemo(() => readContent(data?.content), [data?.content]);
   const isVoice = data?.messageType === "voice";
 
-  // Streams instead of downloading the whole file as soon as the message is on screen
-  const player = useAudioPlayer(content.url ? { uri: content.url } : null, { updateInterval: 250 });
+  // Locked files are downloaded and unlocked first (uri is null until then); older ones stream from the link
+  const [file] = useMediaFiles(content.url ? [{ url: content.url, key: content.key, name: content.name ?? undefined }] : []);
+  const uri = file?.uri ?? null;
+  const player = useAudioPlayer(uri ? { uri } : null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
   const [trackWidth, setTrackWidth] = useState(0);
 
@@ -50,7 +54,7 @@ const AudioPlayer = ({ data, onLongPress }: any) => {
   }, [status.didJustFinish, player]);
 
   const toggle = () => {
-    if (!content.url) return;
+    if (!uri) return;
     if (playing) {
       player.pause();
       return;
@@ -67,14 +71,14 @@ const AudioPlayer = ({ data, onLongPress }: any) => {
     player.seekTo(Math.max(0, Math.min(duration, (x / trackWidth) * duration)));
   };
 
-  if (!content.url) {
+  if (!content.url || file?.failed) {
     return <Text style={styles.unavailable}>Audio unavailable</Text>;
   }
 
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.playBtn} onPress={toggle} onLongPress={onLongPress} activeOpacity={0.8} accessibilityLabel={playing ? "Pause" : "Play"}>
-        {status.isBuffering && playing
+        {!uri || (status.isBuffering && playing)
           ? <ActivityIndicator size="small" color="#FFFFFF" />
           : <Ionicons name={playing ? "pause" : "play"} size={18} color="#FFFFFF" style={!playing && { marginLeft: 2 }} />}
       </TouchableOpacity>

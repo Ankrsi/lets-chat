@@ -1,7 +1,7 @@
 import CustomNotification from '@/app/components/customNotification';
 import { getAccessToken } from "@/utils/tokens";
 import { handleGroupKeyPacket } from '@/utils/e2ee';
-import { handleDropCall, handlePickCall, showIncomingCall } from '@/utils/callkeep';
+import { handleDropCall, handlePickCall, showIncomingCall } from '@/utils/incomingCall';
 import { getGlobalIsSocketConnected, getGlobalSocket, getGlobalUsername, setGlobalIsSocketConnected, setGlobalUsername } from '@/utils/globalRefs';
 import notifee, { EventType } from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';

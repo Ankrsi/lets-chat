@@ -1,4 +1,5 @@
 import { colors } from "@/theme";
+import { MediaRef, useMediaFiles } from "@/utils/mediaCrypto";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -12,7 +13,7 @@ const MAX_WIDTH = Dimensions.get("window").width * 0.62;
 const GAP = 3;
 const RADIUS = 14;
 
-type VideoItem = { name?: string; url?: string } | string;
+type VideoItem = MediaRef;
 
 interface Props {
     urls: VideoItem[];
@@ -116,12 +117,16 @@ function FullscreenVideo({ uri, onClose }: { uri: string; onClose: () => void })
     );
 }
 
-function VideoCell({ uri, style, overlay, onLongPress }: { uri: string; style: any; overlay?: React.ReactNode; onLongPress?: () => void }) {
+function VideoCell({ item, style, overlay, onLongPress }: { item: VideoItem; style: any; overlay?: React.ReactNode; onLongPress?: () => void }) {
+    // Locked videos are downloaded and unlocked first; uri is null until then
+    const [file] = useMediaFiles([item]);
+    const uri = file.uri;
     const [preview, setPreview] = useState<Preview | null>(null);
     const [failed, setFailed] = useState(false);
     const [open, setOpen] = useState(false);
 
     useEffect(() => {
+        if (!uri) return;
         let alive = true;
         setFailed(false);
         loadPreview(uri)
@@ -135,7 +140,7 @@ function VideoCell({ uri, style, overlay, onLongPress }: { uri: string; style: a
 
     const duration = formatDuration(preview?.duration ?? null);
 
-    if (failed) {
+    if (failed || file.failed) {
         return (
             <View style={[style, styles.tile, styles.failed]}>
                 <Ionicons name="videocam-off-outline" size={26} color={colors.textMuted} />
@@ -147,7 +152,7 @@ function VideoCell({ uri, style, overlay, onLongPress }: { uri: string; style: a
 
     return (
         <>
-            <TouchableOpacity style={[style, styles.tile]} activeOpacity={0.85} onPress={() => setOpen(true)} onLongPress={onLongPress} accessibilityLabel="Play video">
+            <TouchableOpacity style={[style, styles.tile]} activeOpacity={0.85} onPress={() => uri && setOpen(true)} onLongPress={onLongPress} accessibilityLabel="Play video">
                 {preview?.thumb
                     ? <Image source={preview.thumb} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
                     : !preview && <ActivityIndicator color="rgba(255,255,255,0.7)" style={StyleSheet.absoluteFill} />}
@@ -171,7 +176,7 @@ function VideoCell({ uri, style, overlay, onLongPress }: { uri: string; style: a
             </TouchableOpacity>
 
             <Modal visible={open} animationType="fade" statusBarTranslucent onRequestClose={() => setOpen(false)}>
-                {open && <FullscreenVideo uri={uri} onClose={() => setOpen(false)} />}
+                {open && uri && <FullscreenVideo uri={uri} onClose={() => setOpen(false)} />}
             </Modal>
         </>
     );
@@ -182,7 +187,7 @@ const VideoGrid: React.FC<Props> = ({ urls = [], onLongPress }) => {
     const uriOf = (item: VideoItem) => (item as any)?.url || (item as string);
 
     const render = (item: VideoItem, style: any, index: number, overlay?: React.ReactNode) => (
-        <VideoCell key={`${index}-${uriOf(item)}`} uri={uriOf(item)} style={style} overlay={overlay} onLongPress={onLongPress} />
+        <VideoCell key={`${index}-${uriOf(item)}`} item={item} style={style} overlay={overlay} onLongPress={onLongPress} />
     );
 
     if (count === 1) return render(urls[0], styles.single, 0);

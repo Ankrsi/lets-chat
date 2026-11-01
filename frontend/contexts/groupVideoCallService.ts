@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import * as mediasoupClient from "mediasoup-client";
 import { Alert, DeviceEventEmitter } from "react-native";
 import { getGlobalSocket, getGlobalUsername } from "@/utils/globalRefs";
+import { stopRinging } from "@/utils/incomingCall";
 import InCallManager from "react-native-incall-manager";
 import notifee from '@notifee/react-native';
 import {
@@ -25,12 +26,6 @@ export interface ConsumerEntry {
   producerId: string;
   userId: string;
   stream: MediaStream;
-}
-
-export interface GroupCallIncomingPayload {
-  callId: string;
-  from: string;
-  conversationId: string;
 }
 
 // EXPORTED MUTABLE STATE  (read from UI layer, mutated only inside this file)
@@ -59,7 +54,6 @@ export const getVideoGroupConsumers = (): ConsumerEntry[] => [...videoGroupCallC
 
 export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): void => {
   const GROUP_VIDEO_CALL_SOCKET_EVENTS = [
-    "group:video-incoming",
     "video:newProducer",
     "video:userLeft",
     "video:producerClosed",
@@ -70,20 +64,6 @@ export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): vo
   GROUP_VIDEO_CALL_SOCKET_EVENTS.forEach((sock) => {
     socket?.off(sock);
   });
-
-  socket?.on(
-    "group:video-incoming",
-    ({ callId, from, conversationId }: GroupCallIncomingPayload) => {
-      InCallManager.startRingtone("_DEFAULT_", 0, "default", 25);
-      currentGroupCallId = callId;
-      currentConversationId = conversationId;
-
-      router.push({
-        pathname: "/screens/callScreens/videoIncomingCall",
-        params: { data: JSON.stringify({ callId, fromm: from, conversationId, callType: "groupCall" }) },
-      });
-    }
-  );
 
   socket?.on("video:newProducer", async ({ producerId, userId: producerUserId }: { producerId: string; userId: string; }) => {
     if (producerUserId === myId) return;
@@ -111,12 +91,9 @@ export const registerGroupVideoCallHandlers = (socket: Socket, myId: string): vo
 
   // The caller hung up before anyone joined: stop ringing here
   socket?.on("video:callCanceled", async () => {
-    InCallManager.stopRingtone();
-    const notification = JSON.parse(await AsyncStorage.getItem('last_notification') || "{}");
-    await notifee.cancelNotification(notification?.id || "");
+    await stopRinging(); // the server doesn't send the call ID here, so every ringing call notification goes
     cleanupGroupCall();
-    const onCallScreen = currentScreen === "screens/callScreens/videoIncomingCall" || currentScreen === "screens/callScreens/videoInCall";
-    if (onCallScreen && router.canDismiss()) router.dismiss();
+    if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
   });
 
   socket?.on("video:producerClosed", ({ producerId }: { producerId: string }) => {
@@ -160,7 +137,6 @@ export const registerUser = (socket: Socket, userId: string): void => {
 // START CALL NOTIFICATION
 
 export const handleIncommingGroupVideoCall = async ({ socket, callId, from, conversationId, myId }: any) => {
-  InCallManager.startRingtone("_DEFAULT_", 0, "default", 25);
   currentGroupCallId = callId;
   currentConversationId = conversationId;
   await acceptVideoGroupCall(socket, myId)
@@ -254,15 +230,6 @@ export const acceptVideoGroupCall = async (
       callType: "groupCall",
     },
   });
-};
-
-// REJECT CALL
-
-export const rejectVideoGroupCall = (): void => {
-  InCallManager.stopRingtone();
-  currentGroupCallId = null;
-  currentConversationId = null;
-  if (router.canDismiss()) router.dismiss();
 };
 
 // END CALL

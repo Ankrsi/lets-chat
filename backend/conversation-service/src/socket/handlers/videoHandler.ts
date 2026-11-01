@@ -43,7 +43,7 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
     return !!x && x === y;
   };
 
-  socket.on("video:start-call", async ({ callId, from, to, conversationId, callType = "video", switchToVideo = false, timestamp = new Date() }) => {
+  socket.on("video:start-call", async ({ callId, from, to, conversationId, callType = "video", timestamp = new Date() }) => {
     try {
       console.info("[calling] start call", callId, from, to, conversationId, callType);
       const [userInCall, convLock] = await getMany(redisPublisher, [`user:${to}:inCall`, `convCallLock:${conversationId}`]);
@@ -83,7 +83,7 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
       ]);
 
       await sendAudioVideoFCMNotification(to, {
-        callId, fromm: from, to, conversationId, messageType: "video", isIncoming: true, offerType: "initial", switchToVideo, callType, timestamp
+        callId, fromm: from, to, conversationId, messageType: "video", isIncoming: true, offerType: "initial", callType, timestamp
       }, "individual");
       await emitTo(io, [from], "video:call-details", { callId, from, to });
 
@@ -227,8 +227,8 @@ export const videoHandler = (socket: Socket, io: Server, redisPublisher: any) =>
         await publishCallUpdate(redisPublisher, { from: username, callId, conversationId, status, timestamp });
 
         // Caller hung up before it was answered: stop the ringing on the other phone
-        if (call.connected == false) {
-          const otherUser = username == participants[0] ? participants[1] : username;
+        const otherUser = participants.find((p) => String(p) !== String(username));
+        if (call.connected == false && otherUser) {
           sendAudioVideoFCMNotification(otherUser, {
             callId, fromm: username, to: "", isIncoming: false, messageType: "video", offerType: "CALL_ENDED", callType: "caller_cancelled"
           }, "individual").catch(console.error);

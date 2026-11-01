@@ -6,7 +6,7 @@ import { Router } from 'expo-router';
 import { Platform } from 'react-native';
 import { CHATAPI } from '@/utils/api';
 import { initKey } from '@/utils/e2ee';
-import { setGlobalUsername } from '@/utils/globalRefs';
+import { setGlobalDbTick, setGlobalUsername } from '@/utils/globalRefs';
 import { initializeSocket, offlineMsgStoreApi, restorePreviousConversations } from '@/utils/socket';
 
 // Profile as returned by auth-service (verify-otp, verify-user, /profile/*)
@@ -57,53 +57,49 @@ async function clearLocalData() {
   await AsyncStorage.multiRemove(["contactsFriend", "twoStepEnabled", "photoVisibility"]);
 }
 
-export async function syncContacts() {
+// Finds which of the phone's contacts use the app and saves them ("contactsFriend").
+// Runs at login, on every app start and when the contacts screen opens, so a failed try
+// (no permission yet, offline) fixes itself next time. `ask`: show the permission prompt if needed.
+// Returns false when there's no contacts permission.
+export async function syncContacts(ask = false): Promise<boolean> {
+  let { status, canAskAgain } = await Contacts.getPermissionsAsync();
+  if (status !== "granted" && ask && canAskAgain) ({ status } = await Contacts.requestPermissionsAsync());
+  if (status !== "granted") return false;
+
   try {
     const { data } = await Contacts.getContactsAsync({
       fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
     });
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      console.log("No contacts available");
-      return;
-    }
-    let filterData: any = data.filter(c => c.phoneNumbers && c.phoneNumbers.length > 0)
-    filterData = filterData.map((c: any) => {
-      try {
-        let raw = c.phoneNumbers?.[0]?.number || "";
-        let cleaned = raw.replace(/[^\d+]/g, "");
-        if (!/^\+?\d{8,15}$/.test(cleaned)) {
-          return null;
-        }
-        return {
-          name: c.name,
-          phone: cleaned,
-        };
+
+    // Every number of every contact: a friend may use the app with their second number
+    const seen = new Set<string>();
+    const phonesWithNames: { name: string; phone: string }[] = [];
+    for (const c of data ?? []) {
+      for (const p of c.phoneNumbers ?? []) {
+        const phone = (p.number || "").replace(/[^\d+]/g, "");
+        if (!/^\+?\d{8,15}$/.test(phone) || seen.has(phone)) continue;
+        seen.add(phone);
+        phonesWithNames.push({ name: c.name, phone });
       }
-      catch (err) {
-        return null
-      }
-    }).filter(Boolean) || [];
-    try {
-      const res = await CHATAPI.post("/contacts/my-contacts", {
-        phonesWithNames: filterData,
-      });
-      const friends = res.data?.filter((usr: any) => usr.isOnboarded);
-      await AsyncStorage.setItem("contacts", JSON.stringify(res.data));
-      await AsyncStorage.setItem("contactsFriend", JSON.stringify(friends));
-      let username = await AsyncStorage.getItem("username");
-      setGlobalUsername(username);
-    } catch (err) {
-      console.error("Error fetching contacts:", err);
     }
+    if (!phonesWithNames.length) return true;
+
+    const res = await CHATAPI.post("/contacts/my-contacts", { phonesWithNames: phonesWithNames.slice(0, 5000) });
+    // One entry per person (the same number can be saved twice in different formats)
+    const friends = new Map<string, any>();
+    for (const u of res.data ?? []) if (u.isOnboarded && !friends.has(u.phone)) friends.set(u.phone, u);
+    await AsyncStorage.setItem("contactsFriend", JSON.stringify([...friends.values()]));
+    setGlobalDbTick(); // names everywhere in the app refresh
   } catch (err) {
-    console.error("Error fetching contacts:", err);
+    console.info("contact sync failed, will try again next time", err);
   }
+  return true;
 }
 
 export async function finishLogin(router: Router) {
   const phone = await AsyncStorage.getItem("username");
   await initKey().catch((err) => console.info("e2ee initKey failed", err));
-  await syncContacts();
+  await syncContacts(true);
   await restorePreviousConversations();
   await initializeSocket();
   await offlineMsgStoreApi(phone as string);

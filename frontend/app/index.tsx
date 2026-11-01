@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, PanResponder, StatusBar, Text, TouchableOpacity, View } from 'react-native';
 import { consumePendingNotificationOpen } from '@/utils/notificationOpen';
 import { AuthAPI } from '@/utils/api';
-import { saveUser } from '@/utils/session';
+import { saveUser, syncContacts } from '@/utils/session';
 import { startStyle } from "./styles";
 import { colors, gradients } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
@@ -71,6 +71,8 @@ export default function Index() {
       router.replace("/screens/chat");
       // App may have been launched (from killed state) by tapping a notification.
       setTimeout(consumePendingNotificationOpen, 0);
+      // Refresh who's on the app in the background (new contacts, or a sync that failed before)
+      syncContacts();
     })()
   }, [])
 

@@ -6,8 +6,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+    ActivityIndicator,
     FlatList,
     Image,
+    Linking,
     StatusBar,
     Text,
     TextInput,
@@ -17,21 +19,35 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ContactsStyles } from "../styles";
 import { getGlobalUsername } from "@/utils/globalRefs";
+import { syncContacts } from "@/utils/session";
 
 export default function Contacts() {
     const username = getGlobalUsername();
     const [contacts, setContacts] = useState<any[]>([]);
     const [search, setSearch] = useState("");
     const [filtered, setFiltered] = useState<any[]>([]);
+    const [syncing, setSyncing] = useState(false);
+    const [noPermission, setNoPermission] = useState(false);
     const router = useRouter();
 
+    // Show the saved list right away, then refresh it from the phone's contacts
     useFocusEffect(
         useCallback(() => {
+            let alive = true;
+            const load = async () => {
+                const stored = JSON.parse(await AsyncStorage.getItem("contactsFriend") || "[]");
+                if (alive) setContacts(stored);
+            };
             (async () => {
-                const storeContacts = JSON.parse(await AsyncStorage.getItem("contactsFriend") || "[]");
-                setContacts(storeContacts);
-                setFiltered(storeContacts);
+                await load();
+                setSyncing(true);
+                const allowed = await syncContacts(true);
+                if (!alive) return;
+                setNoPermission(!allowed);
+                setSyncing(false);
+                await load();
             })();
+            return () => { alive = false; };
         }, [])
     );
 
@@ -159,9 +175,29 @@ export default function Contacts() {
                     ItemSeparatorComponent={() => <View style={ContactsStyles.separator} />}
                     ListEmptyComponent={
                         <View style={ContactsStyles.empty}>
-                            <Ionicons name="people-outline" size={60} color={colors.primaryMuted} />
-                            <Text style={ContactsStyles.emptyTitle}>No contacts found</Text>
-                            <Text style={ContactsStyles.emptySub}>Try a different name or number</Text>
+                            {syncing && !search ? (
+                                <>
+                                    <ActivityIndicator size="large" color={colors.primary} />
+                                    <Text style={ContactsStyles.emptySub}>Finding your contacts…</Text>
+                                </>
+                            ) : noPermission ? (
+                                <>
+                                    <Ionicons name="people-outline" size={60} color={colors.primaryMuted} />
+                                    <Text style={ContactsStyles.emptyTitle}>Allow access to contacts</Text>
+                                    <Text style={ContactsStyles.emptySub}>We need your contacts to show who's on the app</Text>
+                                    <TouchableOpacity onPress={() => Linking.openSettings()} style={{ marginTop: 14 }}>
+                                        <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 15 }}>Open Settings</Text>
+                                    </TouchableOpacity>
+                                </>
+                            ) : (
+                                <>
+                                    <Ionicons name="people-outline" size={60} color={colors.primaryMuted} />
+                                    <Text style={ContactsStyles.emptyTitle}>No contacts found</Text>
+                                    <Text style={ContactsStyles.emptySub}>
+                                        {search ? "Try a different name or number" : "None of your contacts use the app yet"}
+                                    </Text>
+                                </>
+                            )}
                         </View>
                     }
                     removeClippedSubviews={true}      // unmount off-screen rows from memory

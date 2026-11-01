@@ -2,3 +2,12 @@
 # TURN server secrets (old self-hosted TURN; the app now uses Cloudflare)
 backend/conversation-service/docker-soft/turn-server/certs/
 backend/conversation-service/docker-soft/turn-server/turnserver.conf
+
+# Local Docker APK builds
+.expo-token
+build-output/
+
+# build sh
+android-build.Dockerfile
+build-android.sh
+.dockerignore

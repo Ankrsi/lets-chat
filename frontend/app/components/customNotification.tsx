@@ -1,6 +1,17 @@
 import notifee, { AndroidCategory, AndroidImportance, AndroidStyle, AndroidVisibility } from '@notifee/react-native';
 import { messageNotificationsOn } from '@/utils/notificationSettings';
 
+// First photo's link, only if it isn't locked (encrypted content or locked photos give null)
+const imageUrl = (content: any): string | null => {
+    try {
+        const c = typeof content === 'string' ? JSON.parse(content) : content;
+        const first = c?.urls?.[0];
+        return typeof first === 'string' ? first : first && !first.key ? first.url ?? null : null;
+    } catch {
+        return null;
+    }
+};
+
 export default async function CustomNotification(data: any) {
     if (!data) return;
     // Turned off in Settings → Notifications
@@ -73,10 +84,10 @@ export default async function CustomNotification(data: any) {
                     pressAction: { id: 'default', launchActivity: 'default' },
                     smallIcon: 'ic_launcher',
                     importance: AndroidImportance.DEFAULT,
-                    style: {
-                        type: AndroidStyle.BIGPICTURE,
-                        picture: JSON.parse(data?.content)?.url || 'https://my-cdn.com/images/default.png',
-                    },
+                    // Locked photos can't be shown before the app unlocks them, so only older ones get a picture
+                    ...(imageUrl(data?.content) && {
+                        style: { type: AndroidStyle.BIGPICTURE, picture: imageUrl(data?.content)! },
+                    }),
                 },
                 ios: {
                     sound: 'default',

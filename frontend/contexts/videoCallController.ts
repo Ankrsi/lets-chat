@@ -1,9 +1,5 @@
-
-
-//     // CHANGED: reads incoming call type + handles the switch-to-video renegotiation
-//     socket?.on("video:offer", async ({ from, offer }) => {
-
 import { currentScreen } from "@/app/_layout";
+import { stopRinging } from "@/utils/incomingCall";
 import { getIceServers } from "@/utils/turn";
 import { updateConversationLastMessage } from "@/db/conversationRepo";
 import { saveMessage } from "@/db/messageRepo";
@@ -289,6 +285,7 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
     });
 
     socket?.on("video:missed-call", async ({ from, callId }) => {
+        stopRinging(callId);
         if (currentScreen === "screens/callScreens/videoInCall") {
             router.dismiss();
         }
@@ -349,7 +346,8 @@ export const registerVideoCallHandlers = (socket: Socket, myId: string) => {
         cleanupPeer(username);
     });
 
-    socket?.on("video:clear-call", ({ from, username }) => {
+    socket?.on("video:clear-call", ({ from, username, callId }) => {
+        stopRinging(callId); // the caller hung up while it was still ringing here
         if (from == username) {
             socket?.emit("video:end-call", { callId: currentCallId, from, conversationId: currentConversationId, timestamp: Date.now() });
         }
@@ -403,11 +401,12 @@ export const leaveVideoCall = (socket: Socket, myId: string, conversationIdTemp:
     }
 };
 
-export const rejectVideoCall = (socket: Socket, myId: string, to: string) => {
-    socket?.emit("video:reject-call", { callId: currentCallId, from: myId, to });
+export const rejectVideoCall = (socket: Socket, myId: string, to: string, callId?: string) => {
+    socket?.emit("video:reject-call", { callId: callId || currentCallId, from: myId, to });
     currentCallId = null;
     peerConnection = {};
-    router.dismiss();
+    // Declined from the notification: often there is no screen to close (or no navigator yet)
+    if (currentScreen === "screens/callScreens/videoInCall" && router.canDismiss()) router.dismiss();
 };
 
 export const addUserVideoCall = (socket: Socket, myId: string, to: any[], callType: string) => {
@@ -416,7 +415,7 @@ export const addUserVideoCall = (socket: Socket, myId: string, to: any[], callTy
     }
 };
 
-export const startVideoCall = async (socket: Socket, from: string, to: string, conversationId: string, notifyDbUpdate: any, callType: "audio" | "video" = "video", switchToVideo: boolean = false) => {
+export const startVideoCall = async (socket: Socket, from: string, to: string, conversationId: string, notifyDbUpdate: any, callType: "audio" | "video" = "video") => {
     if (!from || !to) return;
 
     currentCallType = callType;
@@ -473,7 +472,7 @@ export const startVideoCall = async (socket: Socket, from: string, to: string, c
     notifyDbUpdate();
     currentCallId = tempCallId;
     socket?.emit("chat:send-message", socketData);
-    socket?.emit("video:start-call", { callId: tempCallId, from, to, conversationId, switchToVideo, callType });
+    socket?.emit("video:start-call", { callId: tempCallId, from, to, conversationId, callType });
 
     router.push({
         pathname: "/screens/callScreens/videoInCall",
@@ -511,20 +510,6 @@ export const handleIncommingVideoCall = async ({ socket, callId, from, to, conve
     currentConversationId = conversationId;
 
     await acceptVideoCall(socket, from, to, conversationId, callId, undefined, callType ?? currentCallType);
-};
-
-export const switchCamera = async () => {
-    if (!localStream) return;
-
-    const videoTrack = localStream.getVideoTracks()[0];
-    if (!videoTrack) return;
-
-    const settings = videoTrack.getSettings();
-    const newFacingMode = settings.facingMode === "user" ? "environment" : "user";
-
-    await videoTrack.applyConstraints({
-        facingMode: newFacingMode
-    });
 };
 
 export const switchCallType = async (socket: Socket, myId: string, newCallType: "audio" | "video") => {

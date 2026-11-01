@@ -11,7 +11,6 @@ export interface IChatMessage {
   messageType: "video" | "audio" | "taxi_audio" | "group_audio" | "group_video",
   offerType?: string,
   isIncoming?: boolean,
-  switchToVideo?: boolean,
   callType?: string,
   timestamp?: string
 }
@@ -75,7 +74,6 @@ export const sendAudioVideoFCMNotification = async (receiverId: string, message:
         offer: message.offer,
         offerType: message.offerType,
         isIncoming: message.isIncoming,
-        switchToVideo: message.switchToVideo,
         callType: message.callType,
         timestamp: message.timestamp,
         app_code,

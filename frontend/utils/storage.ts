@@ -15,10 +15,13 @@ export const cacheSize = () => {
 export const clearCache = async () => {
   await Image.clearDiskCache().catch(() => undefined);
   await clearVideoCache();
-  try {
-    const downloads = new Directory(Paths.cache, "downloads");
-    if (downloads.exists) downloads.delete();
-  } catch (err) {
-    console.info("downloads folder not cleared", err);
+  // Downloaded files, and unlocked chat media (downloaded again and unlocked when shown next)
+  for (const name of ["downloads", "media"]) {
+    try {
+      const dir = new Directory(Paths.cache, name);
+      if (dir.exists) dir.delete();
+    } catch (err) {
+      console.info(`${name} folder not cleared`, err);
+    }
   }
 };

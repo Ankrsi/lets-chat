@@ -262,17 +262,6 @@ export const deleteMessageById = async (id: string, messageIds: string[], fromSe
     }
 }
 
-export const editMessageById = async (id: string, messageId: string, newMessage: string) => {
-    try {
-        await db.runAsync(
-            `UPDATE messages SET content = json_set(content, '$.msg', ?) WHERE conversationId = ? AND messageId = ?`,
-            [newMessage, id, messageId]
-        );
-    } catch (error) {
-        console.info("Error editing message:", error);
-    }
-}
-
 export const clearMessageById = async (id: string) => {
     try {
         await db.runAsync(

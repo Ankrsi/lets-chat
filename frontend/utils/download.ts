@@ -3,6 +3,7 @@ import { Directory, File } from "expo-file-system";
 import * as LegacyFS from "expo-file-system/legacy";
 import { Platform, Share } from "react-native";
 import { safeFileName } from "@/utils/media";
+import { openMedia } from "@/utils/mediaCrypto";
 
 // Folder the user picked on Android (a SAF content URI), reused for later downloads
 const DOWNLOAD_DIR_KEY = "downloadDirUri";
@@ -74,8 +75,12 @@ export async function downloadFile(
   name: string,
   mimeType: string | undefined,
   onProgress?: (fraction: number) => void,
+  fileKey?: string,
 ): Promise<string> {
-  const localUri = await downloadToCache(url, name, onProgress);
+  // Locked files: download and unlock (the unlocked copy stays in the media cache)
+  const localUri = fileKey
+    ? await openMedia({ url, key: fileKey, name }, onProgress)
+    : await downloadToCache(url, name, onProgress);
   try {
     if (Platform.OS === "android") {
       const folder = await saveToFolderAndroid(localUri, name, mimeType || "application/octet-stream");
@@ -84,6 +89,6 @@ export async function downloadFile(
     await Share.share({ url: localUri, title: name });
     return "Ready to save";
   } finally {
-    if (Platform.OS === "android") await LegacyFS.deleteAsync(localUri, { idempotent: true }).catch(() => undefined);
+    if (Platform.OS === "android" && !fileKey) await LegacyFS.deleteAsync(localUri, { idempotent: true }).catch(() => undefined);
   }
 }

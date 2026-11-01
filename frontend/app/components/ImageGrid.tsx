@@ -10,12 +10,13 @@ import ImageViewing from "react-native-image-viewing";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/theme";
+import { MediaRef, useMediaFiles } from "@/utils/mediaCrypto";
 
 const MAX_WIDTH = Dimensions.get("window").width * 0.62;
 const GAP = 3;
 const RADIUS = 12;
 
-type ImageItem = { url?: string } | string;
+type ImageItem = MediaRef;
 
 interface Props {
     urls: ImageItem[];
@@ -31,12 +32,12 @@ const ImageGrid: React.FC<Props> = ({ urls = [], caption = [], onLongPress }) =>
     // Images that failed to load (bad or unreachable URL): show a placeholder instead
     const [failed, setFailed] = useState<Record<number, boolean>>({});
 
-    const images = urls.map((u: any) => ({
-        uri: u?.url || u,
-    }));
+    // Locked photos are downloaded and unlocked first; uri is null until then
+    const files = useMediaFiles(urls);
+    const images = files.map((f) => ({ uri: f.uri ?? "" }));
 
     const openViewer = (i: number) => {
-        if (failed[i]) return; // the full-screen viewer would only spin forever
+        if (failed[i] || !files[i]?.uri) return; // the full-screen viewer would only spin forever
         setIndex(i);
         setVisible(true);
     };
@@ -49,19 +50,19 @@ const ImageGrid: React.FC<Props> = ({ urls = [], caption = [], onLongPress }) =>
         overlay?: React.ReactNode,
     ) => (
         <TouchableOpacity key={index} activeOpacity={0.9} onPress={() => openViewer(index)} onLongPress={onLongPress}>
-            {failed[index] ? (
+            {failed[index] || files[index]?.failed ? (
                 <View style={[style, cornerStyle, styles.failed]}>
                     <Ionicons name="image-outline" size={28} color={colors.textMuted} />
                     <Text style={styles.failedText}>Image unavailable</Text>
                 </View>
             ) : (
                 <Image
-                    source={{ uri: (img as any)?.url || img }}
+                    source={files[index]?.uri ? { uri: files[index].uri! } : null}
                     style={[style, cornerStyle, styles.loading]}
                     cachePolicy="disk"
                     transition={150}
                     onError={(e) => {
-                        console.info("chat image failed to load", (img as any)?.url || img, e?.error);
+                        console.info("chat image failed to load", files[index]?.uri, e?.error);
                         setFailed((prev) => ({ ...prev, [index]: true }));
                     }}
                 />

@@ -5,7 +5,6 @@ import '@/theme';
 import AppLock from "@/app/components/AppLock";
 import { DbUpdateProvider } from "@/contexts/DbUpdateContext";
 import { FriendContactProvider } from "@/contexts/FriendContactContext";
-import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SocketProvider } from "@/contexts/SocketContext";
 import { initDB } from "@/db/initDB";
 import { requestAllPermissions } from '@/utils/permissions';
@@ -186,7 +185,6 @@ function RootLayoutContent() {
               <Stack.Screen name="screens/disappearingMsgs" options={{ title: "Disappearing Msgs", headerShown: false }} />
               <Stack.Screen name="screens/selfDestructingMsgs" options={{ title: "Self Destructing Msgs", headerShown: false }} />
               <Stack.Screen name="screens/shareContact" options={{ title: "Contact to send", headerShown: false }} />
-              <Stack.Screen name="screens/callScreens/videoIncomingCall" options={{ headerShown: false }} />
               <Stack.Screen name="screens/callScreens/videoInCall" options={{ headerShown: false }} />
               <Stack.Screen name="screens/statusScreens/statusScreen" options={{ title: "Status", headerShown: false, animation: "none" }} />
               <Stack.Screen name="screens/backupScreen" options={{ title: "Backups", headerShown: false }} />
@@ -212,9 +210,7 @@ function RootLayoutContent() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NotificationProvider>
-        <RootLayoutContent />
-      </NotificationProvider>
+      <RootLayoutContent />
     </GestureHandlerRootView>
   )
 }

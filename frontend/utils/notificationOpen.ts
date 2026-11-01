@@ -2,7 +2,7 @@ import notifee from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getInitialNotification as getInitialFcmNotification, getMessaging } from '@react-native-firebase/messaging';
 import { router } from 'expo-router';
-import { handlePickCall } from './callkeep';
+import { handlePickCall } from './incomingCall';
 import { getGlobalIsSocketConnected, getGlobalSocket, getGlobalUsername } from './globalRefs';
 import { initializeSocket } from './socket';
 

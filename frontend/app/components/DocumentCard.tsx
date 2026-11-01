@@ -10,6 +10,7 @@ const savedThisSession = new Map<string, string>();
 
 interface Props {
   url?: string;
+  fileKey?: string; // the key that unlocks the file (older messages have none)
   name: string;
   size?: number | null;
   mimeType?: string;
@@ -17,7 +18,7 @@ interface Props {
   onLongPress?: () => void;
 }
 
-export default function DocumentCard({ url, name, size, mimeType, preview, onLongPress }: Props) {
+export default function DocumentCard({ url, fileKey, name, size, mimeType, preview, onLongPress }: Props) {
   const kind = documentKind(name, mimeType);
   const sizeText = formatBytes(size);
   const [progress, setProgress] = useState<number | null>(null);
@@ -28,7 +29,7 @@ export default function DocumentCard({ url, name, size, mimeType, preview, onLon
     if (!url) return;
     setProgress(0);
     try {
-      const where = await downloadFile(url, name, mimeType, setProgress);
+      const where = await downloadFile(url, name, mimeType, setProgress, fileKey);
       savedThisSession.set(url, where);
       setSaved(where);
     } catch (err: any) {

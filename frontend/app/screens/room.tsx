@@ -31,7 +31,8 @@ import {
   useWindowDimensions
 } from "react-native";
 import { colors } from "@/theme";
-import { MAX_UPLOAD_BYTES, MediaItem, mediaFromPickerAsset, safeFileName, uploadToPresignedUrl } from "@/utils/media";
+import { MAX_UPLOAD_BYTES, MediaItem, mediaFromPickerAsset, safeFileName } from "@/utils/media";
+import { uploadLocked } from "@/utils/mediaCrypto";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AudioPlayer from "../components/AudioPlayer";
 import DeleteMessageModal from "../components/chatDeleteModal";
@@ -282,6 +283,7 @@ const MessageRow = React.memo(
           {item.messageType === "document" && (
             <DocumentCard
               url={content?.url}
+              fileKey={content?.key}
               name={content?.name || item.fileName || "Document"}
               size={content?.size}
               mimeType={content?.mimeType}
@@ -835,9 +837,11 @@ export default function ChatScreen() {
         data: items.map((it) => ({ fileName: safeFileName(it.name), mediaType: it.mimeType })),
       });
 
-      // One progress bar across all files
+      // Each file is locked with its own key before upload; the key travels in the (encrypted) message.
+      // One progress bar across all files.
+      const keys: string[] = [];
       for (let i = 0; i < items.length; i++) {
-        await uploadToPresignedUrl(data[i].uploadUrl, items[i], (f) =>
+        keys[i] = await uploadLocked(data[i].uploadUrl, items[i], (f) =>
           setProgress(Math.max(1, Math.round(((i + f) / items.length) * 100))),
         );
       }
@@ -846,10 +850,10 @@ export default function ChatScreen() {
         const group = items.map((it, i) => ({ it, i })).filter(({ it }) => it.kind === kind);
         if (!group.length) continue;
         if (group.every(({ i }) => !caps[i])) {
-          await sendToSocket(kind, { urls: group.map(({ it, i }) => ({ url: data[i].fileUrl, name: it.name })) }, roomInfo);
+          await sendToSocket(kind, { urls: group.map(({ it, i }) => ({ url: data[i].fileUrl, key: keys[i], name: it.name })) }, roomInfo);
         } else {
           for (const { it, i } of group) {
-            await sendToSocket(kind, { urls: [{ url: data[i].fileUrl, name: it.name }], ...(caps[i] && { caption: caps[i] }) }, roomInfo);
+            await sendToSocket(kind, { urls: [{ url: data[i].fileUrl, key: keys[i], name: it.name }], ...(caps[i] && { caption: caps[i] }) }, roomInfo);
           }
         }
       }
@@ -857,6 +861,7 @@ export default function ChatScreen() {
         if (it.kind !== "document") continue;
         await sendToSocket("document", {
           url: data[i].fileUrl,
+          key: keys[i],
           name: it.name,
           size: it.size ?? null,
           mimeType: it.mimeType,
@@ -889,13 +894,14 @@ export default function ChatScreen() {
         conversationId: id as string,
         data: [{ fileName: safeFileName(item.name), mediaType: item.mimeType }],
       });
-      await uploadToPresignedUrl(data[0].uploadUrl, item, (f) => setProgress(Math.max(1, Math.round(f * 100))));
+      const key = await uploadLocked(data[0].uploadUrl, item, (f) => setProgress(Math.max(1, Math.round(f * 100))));
       await sendToSocket("audio", {
         url: data[0].fileUrl,
+        key,
         name: item.name,
         size: item.size,
         mimeType: item.mimeType,
-        urls: [{ url: data[0].fileUrl, name: item.name }], // older app versions read urls[0]
+        urls: [{ url: data[0].fileUrl, key, name: item.name }], // older app versions read urls[0]
       }, roomInfo);
     } catch (error: any) {
       console.error("❌ Audio upload failed:", error?.data || error?.message);
@@ -947,8 +953,8 @@ export default function ChatScreen() {
         conversationId: id as string,
         data: [{ fileName: name, mediaType: item.mimeType }],
       });
-      await uploadToPresignedUrl(data[0].uploadUrl, item, (f) => setProgress(Math.max(1, Math.round(f * 100))));
-      await sendToSocket("voice", { url: data[0].fileUrl, name, duration: duration.toFixed(1) }, roomInfo);
+      const key = await uploadLocked(data[0].uploadUrl, item, (f) => setProgress(Math.max(1, Math.round(f * 100))));
+      await sendToSocket("voice", { url: data[0].fileUrl, key, name, duration: duration.toFixed(1) }, roomInfo);
     } catch (error: any) {
       console.error("❌ Voice note upload failed:", error?.data || error?.message);
       Alert.alert("Couldn't send voice message", error?.message || "Try again.");

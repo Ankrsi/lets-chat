@@ -6,7 +6,7 @@ import 'react-native-get-random-values';
 import inCallManager from 'react-native-incall-manager';
 import CustomNotification from './app/components/customNotification';
 import { handleGroupKeyPacket } from './utils/e2ee';
-import { handleDropCall, showIncomingCall } from './utils/callkeep';
+import { handleDropCall, showIncomingCall } from './utils/incomingCall';
 import { getGlobalSocket, getGlobalUsername } from './utils/globalRefs';
 import { savePendingNotificationOpen } from './utils/notificationOpen';
 import { initializeSocket } from './utils/socket';

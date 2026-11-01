@@ -9,6 +9,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useContext, useEffect, useState } from "react";
 import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useMediaFiles } from "@/utils/mediaCrypto";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -94,7 +95,8 @@ export default function MessageInfoScreen() {
     const isGroup = type === "group";
     const content = parseJson(msg?.content);
     const media = msg ? MEDIA[msg.messageType] : undefined;
-    const firstImage = msg?.messageType === "image" ? (content?.urls?.[0]?.url || content?.urls?.[0]) : null;
+    const [thumb] = useMediaFiles(msg?.messageType === "image" && content?.urls?.[0] ? [content.urls[0]] : []);
+    const firstImage = thumb?.uri ?? null;
     const caption = Array.isArray(content?.caption) ? content.caption.filter(Boolean).join("\n") : content?.caption;
     const bodyText = (typeof content?.msg === "string" && content.msg) || caption || content?.name || "";
 

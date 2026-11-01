@@ -27,7 +27,7 @@ export const encryptBackup = async (data: Uint8Array, password: string) => {
   return out;
 };
 
-/** Throws "Wrong backup password" if the password doesn't match. */
+// Throws "Wrong backup password" if the password doesn't match
 export const decryptBackup = async (file: Uint8Array, password: string) => {
   if (!MAGIC.every((b, i) => file[i] === b)) throw new Error("This isn't a chat backup file.");
   const salt = file.subarray(4, 20);
